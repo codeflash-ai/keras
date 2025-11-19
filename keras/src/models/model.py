@@ -923,11 +923,14 @@ def model_from_json(json_string, custom_objects=None):
 
 
 def functional_init_arguments(args, kwargs):
-    return (
-        (len(args) == 2)
-        or (len(args) == 1 and "outputs" in kwargs)
-        or ("inputs" in kwargs and "outputs" in kwargs)
-    )
+    args_len = len(args)
+    if args_len == 2:
+        return True
+    if args_len == 1 and "outputs" in kwargs:
+        return True
+    if "inputs" in kwargs and "outputs" in kwargs:
+        return True
+    return False
 
 
 def inject_functional_model_class(cls):
