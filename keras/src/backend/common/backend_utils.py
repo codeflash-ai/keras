@@ -118,30 +118,23 @@ def compute_conv_transpose_padding_args_for_jax(
     num_spatial_dims = len(input_shape) - 2
     kernel_spatial_shape = kernel_shape[:-2]
 
-    jax_padding = []
-    for i in range(num_spatial_dims):
-        output_padding_i = (
-            output_padding
-            if output_padding is None or isinstance(output_padding, int)
-            else output_padding[i]
-        )
-        strides_i = strides if isinstance(strides, int) else strides[i]
-        dilation_rate_i = (
-            dilation_rate
-            if isinstance(dilation_rate, int)
-            else dilation_rate[i]
-        )
-        (
-            pad_left,
-            pad_right,
-        ) = _convert_conv_transpose_padding_args_from_keras_to_jax(
+    if isinstance(strides, int):
+        strides = (strides,) * num_spatial_dims
+    if isinstance(dilation_rate, int):
+        dilation_rate = (dilation_rate,) * num_spatial_dims
+    if output_padding is None or isinstance(output_padding, int):
+        output_padding = (output_padding,) * num_spatial_dims
+
+    jax_padding = [
+        _convert_conv_transpose_padding_args_from_keras_to_jax(
             kernel_size=kernel_spatial_shape[i],
-            stride=strides_i,
-            dilation_rate=dilation_rate_i,
+            stride=strides[i],
+            dilation_rate=dilation_rate[i],
             padding=padding,
-            output_padding=output_padding_i,
+            output_padding=output_padding[i],
         )
-        jax_padding.append((pad_left, pad_right))
+        for i in range(num_spatial_dims)
+    ]
 
     return jax_padding
 
@@ -237,21 +230,19 @@ def compute_conv_transpose_output_shape(
     else:
         input_spatial_shape = input_shape[2:]
 
-    output_shape = []
-    for i in range(num_spatial_dims):
-        current_output_padding = (
-            None if output_padding is None else output_padding[i]
-        )
-
-        shape_i = _get_output_shape_given_tf_padding(
+    output_shape = [
+        _get_output_shape_given_tf_padding(
             input_size=input_spatial_shape[i],
             kernel_size=kernel_spatial_shape[i],
             strides=strides[i],
             padding=padding,
-            output_padding=current_output_padding,
+            output_padding=None
+            if output_padding is None
+            else output_padding[i],
             dilation_rate=dilation_rate[i],
         )
-        output_shape.append(shape_i)
+        for i in range(num_spatial_dims)
+    ]
 
     if data_format == "channels_last":
         output_shape = [input_shape[0]] + output_shape + [filters]
