@@ -193,15 +193,12 @@ def np_conv3d_transpose(
     if isinstance(strides, (tuple, list)):
         h_stride, w_stride, d_stride = strides
     else:
-        h_stride = strides
-        w_stride = strides
-        d_stride = strides
+        h_stride = w_stride = d_stride = strides
     if isinstance(dilation_rate, (tuple, list)):
         h_dilation, w_dilation, d_dilation = dilation_rate
     else:
-        h_dilation = dilation_rate
-        w_dilation = dilation_rate
-        d_dilation = dilation_rate
+        h_dilation = w_dilation = d_dilation = dilation_rate
+
 
     h_kernel, w_kernel, d_kernel, ch_out, ch_in = kernel_weights.shape
     n_batch, h_x, w_x, d_x, _ = x.shape
@@ -238,9 +235,7 @@ def np_conv3d_transpose(
             (*new_kernel_size_tuple, ch_out, ch_in),
             dtype=kernel_weights.dtype,
         )
-        new_kernel_weights[::h_dilation, ::w_dilation, ::d_dilation] = (
-            kernel_weights
-        )
+        new_kernel_weights[::h_dilation, ::w_dilation, ::d_dilation] = kernel_weights
         kernel_weights = new_kernel_weights
         h_kernel, w_kernel, d_kernel = kernel_weights.shape[:3]
 
@@ -252,8 +247,11 @@ def np_conv3d_transpose(
             w_out + w_kernel,
             d_out + d_kernel,
             ch_out,
-        ]
+        ],
+        dtype=x.dtype,
     )
+    # Reduced redundant shape/slice calculation
+    kernel_broadcast_shape = (h_kernel, w_kernel, d_kernel, ch_out, ch_in)
     for nb in range(n_batch):
         for h_x_idx in range(h_x):
             h_out_idx = h_x_idx * h_stride  # Index in output
@@ -261,6 +259,7 @@ def np_conv3d_transpose(
                 w_out_idx = w_x_idx * w_stride
                 for d_x_idx in range(d_x):
                     d_out_idx = d_x_idx * d_stride
+                    x_slice = x[nb, h_x_idx, w_x_idx, d_x_idx, :]
                     output[
                         nb,
                         h_out_idx : h_out_idx + h_kernel,
@@ -268,11 +267,12 @@ def np_conv3d_transpose(
                         d_out_idx : d_out_idx + d_kernel,
                         :,
                     ] += np.sum(
-                        kernel_weights[:, :, :, :, :]
-                        * x[nb, h_x_idx, w_x_idx, d_x_idx, :],
+                        kernel_weights * x_slice,
                         axis=-1,
                     )
-    output = output + bias_weights
+    # Use numpy broadcasting for bias addition (fast)
+    output += bias_weights
+
 
     # Cut padding results from output
     output = output[
