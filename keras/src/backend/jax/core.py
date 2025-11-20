@@ -18,6 +18,8 @@ from keras.src.backend.common.stateless_scope import in_stateless_scope
 from keras.src.backend.common.symbolic_scope import SymbolicScope
 from keras.src.backend.jax import distribution_lib
 
+_tensor_types = (jnp.ndarray, jax_sparse.JAXSparse)
+
 SUPPORTS_SPARSE_TENSORS = True
 SUPPORTS_RAGGED_TENSORS = False
 IS_THREAD_SAFE = True
@@ -277,9 +279,7 @@ def convert_to_numpy(x):
 
 
 def is_tensor(x):
-    if isinstance(x, (jnp.ndarray, jax_sparse.JAXSparse)):
-        return True
-    return False
+    return isinstance(x, _tensor_types)
 
 
 def shape(x):
