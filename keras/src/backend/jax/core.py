@@ -404,7 +404,17 @@ def vectorized_map(function, elements):
 
 
 def map(f, xs):
-    return jax.lax.map(f, xs)
+    # Use jax.vmap for potentially better compilation, batching, and speed;
+    # fallback to jax.lax.map if input is not an array/NumPy-like and vmapping isn't viable.
+    # For array-like types, vmap is generally faster due to vectorization and parallelization.
+
+    if hasattr(xs, "shape"):
+        # Attempt to use vmap when xs is array-like (e.g., numpy/jax arrays)
+        # (assumes f maps single-element to single-element)
+        return jax.vmap(f)(xs)
+    else:
+        # Fallback for generic sequences, delegates to original jax.lax.map
+        return jax.lax.map(f, xs)
 
 
 def scan(f, init, xs=None, length=None, reverse=False, unroll=1):
