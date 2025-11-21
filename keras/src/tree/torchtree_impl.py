@@ -2,6 +2,10 @@ from collections import defaultdict
 
 from torch.utils import _pytree as torch_tree
 
+_SUPPORTED_NODES = torch_tree.SUPPORTED_NODES
+
+_get_node_type = torch_tree._get_node_type
+
 
 def register_tree_node_class(cls):
     torch_tree.register_pytree_node(
@@ -55,7 +59,14 @@ def _dict_to_ordered_dict(structure):
 
 
 def is_nested(structure):
-    return not _tree_is_leaf(structure)
+    # Inline the 'not _tree_is_leaf' to avoid extra function call overhead
+    if hasattr(is_nested, "_is_leaf"):
+        _is_leaf = is_nested._is_leaf
+    else:
+        _is_leaf = None
+    if _is_leaf is not None and _is_leaf(structure):
+        return False
+    return _get_node_type(structure) in _SUPPORTED_NODES
 
 
 def traverse(func, structure, top_down=True):
