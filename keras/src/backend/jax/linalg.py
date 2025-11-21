@@ -86,7 +86,15 @@ def solve(a, b):
 
 
 def solve_triangular(a, b, lower=False):
-    return jsp.linalg.solve_triangular(a, b, lower=lower)
+    # Just-In-Time compile the solve_triangular for optimal speed
+    # Compile once for fixed 'lower' argument (fastest path in production use)
+    # This still preserves the function signature and behavior exactly
+    if not hasattr(solve_triangular, '_compiled'):
+        solve_triangular._compiled = {
+            True: jax.jit(lambda a, b: jsp.linalg.solve_triangular(a, b, lower=True)),
+            False: jax.jit(lambda a, b: jsp.linalg.solve_triangular(a, b, lower=False))
+        }
+    return solve_triangular._compiled[lower](a, b)
 
 
 def svd(x, full_matrices=True, compute_uv=True):
