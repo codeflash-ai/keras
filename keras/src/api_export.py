@@ -21,7 +21,9 @@ def register_internal_serializable(path, symbol):
 
 
 def get_symbol_from_name(name):
-    return REGISTERED_NAMES_TO_OBJS.get(name, None)
+    # Inline local variable to avoid attribute lookups in hot path
+    d = REGISTERED_NAMES_TO_OBJS
+    return d[name] if name in d else None
 
 
 def get_name_from_symbol(symbol):
