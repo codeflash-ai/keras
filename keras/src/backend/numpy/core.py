@@ -6,8 +6,7 @@ import warnings
 import numpy as np
 
 from keras.src import tree
-from keras.src.backend.common import KerasVariable
-from keras.src.backend.common import standardize_dtype
+from keras.src.backend.common import KerasVariable, standardize_dtype
 from keras.src.backend.common.backend_utils import slice_along_axis
 from keras.src.backend.common.dtypes import result_type
 from keras.src.backend.common.keras_tensor import KerasTensor
@@ -39,20 +38,30 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with numpy backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with numpy backend")
+
+    dtype_std = None
     if dtype is not None:
-        dtype = standardize_dtype(dtype)
+        dtype_std = standardize_dtype(dtype)
     if isinstance(x, Variable):
-        if dtype and dtype != x.dtype:
-            return x.value.astype(dtype)
+        if dtype and dtype_std != x.dtype:
+            return x.value.astype(dtype_std)
         return x.value
-    if not is_tensor(x) and standardize_dtype(dtype) == "bfloat16":
-        # Can't create bfloat16 arrays on the fly (e.g. from a h5 Dataset).
-        # Instead we convert "as is" (to stored dtype) and cast.
-        return np.asarray(x).astype(dtype)
+    # Fast path: if x is already a tensor and dtype is not bfloat16
+    if dtype is not None:
+        if not is_tensor(x) and dtype_std == "bfloat16":
+            # Can't create bfloat16 arrays on the fly (e.g. from a h5 Dataset).
+            # Instead we convert "as is" (to stored dtype) and cast.
+            return np.asarray(x).astype(dtype_std)
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
+        flat = None
+        # Fast-path for simple types
+        if is_tensor(x):
+            # If x is a tensor, likely has .dtype, so avoid flatten overhead
+            args = (getattr(x, "dtype", type(x)),)
+        else:
+            flat = tree.flatten(x)
+            args = (getattr(item, "dtype", type(item)) for item in flat)
+        dtype = result_type(*args)
     return np.array(x, dtype=dtype)
 
 
