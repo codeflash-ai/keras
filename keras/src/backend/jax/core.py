@@ -334,47 +334,48 @@ def compute_output_spec(fn, *args, **kwargs):
         def convert_keras_tensor_to_jax(x):
             if isinstance(x, KerasTensor):
                 shape = tuple(
-                    [d if d is not None else dynamic_dimension for d in x.shape]
+                    d if d is not None else dynamic_dimension for d in x.shape
                 )
                 return jax.ShapeDtypeStruct(shape, dtype=x.dtype)
             return x
 
-        def wrapped_fn(*args, **kwargs):
-            # Turn inputs that are sparse to BCOO tensors
-            def to_bcoo_if_sparse(x, maybe_symbolic_x):
-                if (
-                    isinstance(maybe_symbolic_x, KerasTensor)
-                    and maybe_symbolic_x.sparse
-                ):
-                    return jax_sparse.BCOO.fromdense(x, nse=1)
-                return x
+        def to_bcoo_if_sparse(x, maybe_symbolic_x):
+            if (
+                isinstance(maybe_symbolic_x, KerasTensor)
+                and maybe_symbolic_x.sparse
+            ):
+                return jax_sparse.BCOO.fromdense(x, nse=1)
+            return x
 
-            args, kwargs = tree.map_structure(
+        # Pre-convert inputs for JAX evaluation
+        maybe_symbolic_args_jax, maybe_symbolic_kwargs_jax = tree.map_structure(
+            convert_keras_tensor_to_jax,
+            (maybe_symbolic_args, maybe_symbolic_kwargs),
+        )
+
+        def wrapped_fn(*input_args, **input_kwargs):
+            # Prepare args: convert sparse only if required
+            input_args, input_kwargs = tree.map_structure(
                 to_bcoo_if_sparse,
-                (args, kwargs),
+                (input_args, input_kwargs),
                 (maybe_symbolic_args, maybe_symbolic_kwargs),
             )
 
             rec_args = []
             idx_static = 0
             idx_sym = 0
-            i = 0
-            while idx_static < len(static_args) or idx_sym < len(args):
-                if i in static_args_idx:
+            for i in range(len(static_args_idx) + len(maybe_symbolic_args)):
+                if idx_static < len(static_args_idx) and i == static_args_idx[idx_static]:
                     rec_args.append(static_args[idx_static])
                     idx_static += 1
                 else:
-                    rec_args.append(args[idx_sym])
+                    rec_args.append(input_args[idx_sym])
                     idx_sym += 1
-
-                i += 1
             with StatelessScope():
-                return fn(*rec_args, **kwargs, **static_kwargs)
+                # Expand static_kwargs after dynamic args to preserve signature order.
+                return fn(*rec_args, **input_kwargs, **static_kwargs)
 
-        maybe_symbolic_args_jax, maybe_symbolic_kwargs_jax = tree.map_structure(
-            convert_keras_tensor_to_jax,
-            (maybe_symbolic_args, maybe_symbolic_kwargs),
-        )
+        # Evaluate symbolic shape
         jax_out = jax.eval_shape(
             wrapped_fn, *maybe_symbolic_args_jax, **maybe_symbolic_kwargs_jax
         )
