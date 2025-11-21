@@ -1,5 +1,7 @@
 """Utilities for distribution strategy with JAX backend."""
 
+from functools import lru_cache
+
 import jax
 import numpy as np
 
@@ -212,6 +214,7 @@ def process_id():
     return jax.process_index()
 
 
+@lru_cache(maxsize=None)
 def _to_backend_device(device_name):
     if isinstance(device_name, jax.Device):
         return device_name
@@ -219,11 +222,12 @@ def _to_backend_device(device_name):
     if ":" not in device_name:
         device_type, device_id = device_name, 0
     else:
-        device_type, device_id = device_name.split(":")
-
-    devices = jax.devices(backend=device_type)
+        device_type, device_id = device_name.split(":", 1)
+    devices = _devices_for_backend(device_type)
+    device_id_int = int(device_id)
+    # Linear search, but now on memoized devices list for the backend
     for device in devices:
-        if device.platform == device_type and device.id == int(device_id):
+        if device.platform == device_type and device.id == device_id_int:
             return device
     raise ValueError(f"Device not found: {device_name}")
 
@@ -260,3 +264,9 @@ def _to_backend_layout(tensor_layout):
     partition_spec = jax.sharding.PartitionSpec(*tensor_layout.axes)
     jax_mesh = tensor_layout.device_mesh.backend_mesh
     return jax.sharding.NamedSharding(jax_mesh, partition_spec)
+
+
+@lru_cache(maxsize=None)
+def _devices_for_backend(device_type: str):
+    # Memoized to avoid repeated enumeration of devices per backend
+    return jax.devices(backend=device_type)
