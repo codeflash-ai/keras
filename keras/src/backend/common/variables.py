@@ -3,11 +3,10 @@ import numpy as np
 from keras.src import backend
 from keras.src.api_export import keras_export
 from keras.src.backend import config
-from keras.src.backend.common import dtypes
-from keras.src.backend.common import global_state
+from keras.src.backend.common import dtypes, global_state
 from keras.src.backend.common.name_scope import current_path
-from keras.src.backend.common.stateless_scope import get_stateless_scope
-from keras.src.backend.common.stateless_scope import in_stateless_scope
+from keras.src.backend.common.stateless_scope import (get_stateless_scope,
+                                                      in_stateless_scope)
 from keras.src.utils.module_utils import tensorflow as tf
 from keras.src.utils.naming import auto_name
 
@@ -573,15 +572,45 @@ def initialize_all_variables():
 def standardize_dtype(dtype):
     if dtype is None:
         return config.floatx()
-    dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
-    if hasattr(dtype, "name"):
-        dtype = dtype.name
-    elif hasattr(dtype, "__name__"):
-        dtype = dtype.__name__
-    elif hasattr(dtype, "__str__") and (
-        "torch" in str(dtype) or "jax.numpy" in str(dtype)
-    ):
-        dtype = str(dtype).split(".")[-1]
+    # Fast-path: check for str, already allowed type
+    if isinstance(dtype, str):
+        if dtype in dtypes.ALLOWED_DTYPES:
+            return dtype
+        # Try mapped string
+        mapped = dtypes.PYTHON_DTYPES_MAP.get(dtype, None)
+        if mapped is not None:
+            if mapped in dtypes.ALLOWED_DTYPES:
+                return mapped
+            dtype = mapped  # fall through
+        else:
+            raise ValueError(f"Invalid dtype: {dtype}")
+    else:
+        # Fast path for canonical Python/scalar/numpy types
+        mapped = dtypes.PYTHON_DTYPES_MAP.get(dtype, None)
+        if mapped is not None:
+            if mapped in dtypes.ALLOWED_DTYPES:
+                return mapped
+            dtype = mapped  # fall through
+        # Attribute checks reordered for early exit on known patterns
+        name = getattr(dtype, "name", None)
+        if name is not None:
+            if name in dtypes.ALLOWED_DTYPES:
+                return name
+            dtype = name  # fall through
+        else:
+            typename = getattr(dtype, "__name__", None)
+            if typename is not None:
+                if typename in dtypes.ALLOWED_DTYPES:
+                    return typename
+                dtype = typename  # fall through
+            else:
+                # Slow path: check string representation for framework dtypes
+                dtype_str = str(dtype)
+                if "torch" in dtype_str or "jax.numpy" in dtype_str:
+                    dtype = dtype_str.split(".")[-1]
+                    if dtype in dtypes.ALLOWED_DTYPES:
+                        return dtype
+    # Final allowed dtypes check
 
     if dtype not in dtypes.ALLOWED_DTYPES:
         raise ValueError(f"Invalid dtype: {dtype}")

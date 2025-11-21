@@ -21,7 +21,7 @@ COMPLEX_TYPES = ("complex64", "complex128")
 # We need to separate float8 from float because there are no implicit
 # conversions from float8 dtypes to other dtypes.
 # Ref: https://github.com/google/jax/issues/16705
-FLOAT8_TYPES = ("float8_e4m3fn", "float8_e5m2")
+FLOAT8_TYPES = set(("float8_e4m3fn", "float8_e5m2"))
 
 # All supported dtypes in Keras
 ALLOWED_DTYPES = (
@@ -319,6 +319,8 @@ def result_type(*dtypes):
                 "There is no implicit conversions from float8 dtypes to others."
                 f" You must cast it internally. Received: {dtypes}"
             )
-    return _lattice_result_type(
-        *(config.floatx() if arg is None else arg for arg in dtypes),
+    # Avoid repeated generator creation, tupleize
+    dtype_tuple = tuple(
+        config.floatx() if arg is None else arg for arg in dtypes
     )
+    return _lattice_result_type(*dtype_tuple)

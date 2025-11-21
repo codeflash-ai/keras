@@ -6,8 +6,7 @@ import warnings
 import numpy as np
 
 from keras.src import tree
-from keras.src.backend.common import KerasVariable
-from keras.src.backend.common import standardize_dtype
+from keras.src.backend.common import KerasVariable, standardize_dtype
 from keras.src.backend.common.backend_utils import slice_along_axis
 from keras.src.backend.common.dtypes import result_type
 from keras.src.backend.common.keras_tensor import KerasTensor
@@ -39,21 +38,25 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with numpy backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with numpy backend")
+    dtype_std = None
     if dtype is not None:
-        dtype = standardize_dtype(dtype)
+        dtype_std = standardize_dtype(dtype)
     if isinstance(x, Variable):
-        if dtype and dtype != x.dtype:
-            return x.value.astype(dtype)
+        if dtype_std and dtype_std != x.dtype:
+            return x.value.astype(dtype_std)
         return x.value
-    if not is_tensor(x) and standardize_dtype(dtype) == "bfloat16":
+    # Fast path: avoid repeated standardize_dtype
+    dtype_std = dtype_std if dtype is not None else None
+    if not is_tensor(x) and (dtype_std == "bfloat16"):
         # Can't create bfloat16 arrays on the fly (e.g. from a h5 Dataset).
         # Instead we convert "as is" (to stored dtype) and cast.
-        return np.asarray(x).astype(dtype)
+        return np.asarray(x).astype(dtype_std)
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
+        flat = tree.flatten(x)
+        dtype_std = result_type(
+            *[getattr(item, "dtype", type(item)) for item in flat]
         )
-    return np.array(x, dtype=dtype)
+    return np.array(x, dtype=dtype_std)
 
 
 def convert_to_numpy(x):
