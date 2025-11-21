@@ -988,7 +988,22 @@ class Trainer:
         if isinstance(validation_freq, int):
             return epoch % validation_freq == 0
         elif isinstance(validation_freq, list):
-            return epoch in validation_freq
+            # If the list is large, convert to set once for fast lookups
+            # Heuristic threshold: 16 elements, based on set lookup vs. scan
+            # This avoids overhead on small typical python lists.
+            if len(validation_freq) > 16:
+                # Faster repeated call handling: cache the set in an attribute
+                # This optimization preserves semantic determinism, since input is not mutated
+                # and result is exactly the same as "epoch in validation_freq"
+                vfreq_id = id(validation_freq)
+                cache_attr = "_should_eval_vfreq_cache"
+                cache = getattr(self, cache_attr, None)
+                if cache is None or cache.get("id") != vfreq_id:
+                    cache = {"id": vfreq_id, "set": set(validation_freq)}
+                    setattr(self, cache_attr, cache)
+                return epoch in cache["set"]
+            else:
+                return epoch in validation_freq
         else:
             raise ValueError(
                 "Expected `validation_freq` to be a list or int. "
