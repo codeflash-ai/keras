@@ -59,29 +59,71 @@ def is_nested(structure):
 
 
 def traverse(func, structure, top_down=True):
-    def traverse_children():
+    # Inline traversal to a single loop for less function call overhead
+    
+    # Pre-sort dicts/defaultdicts for deterministic order before recursing
+    typ = type(structure)
+    if typ is dict:
+        structure = {k: structure[k] for k in sorted(structure)}
+    elif typ is defaultdict:
+        structure = defaultdict(
+            structure.default_factory,
+            {k: structure[k] for k in sorted(structure)},
+        )
+    else:
+        # If not a mapping, could be a compound structure, need to check children
         children, treedef = torch_tree.tree_flatten(
             structure,
-            is_leaf=lambda x: x is not structure,
+            is_leaf=lambda x: x is not structure
         )
         if treedef.num_nodes == 1 and treedef.num_leaves == 1:
-            return structure
-        else:
-            return torch_tree.tree_unflatten(
-                [traverse(func, c, top_down=top_down) for c in children],
-                treedef,
-            )
+            # Single leaf
+            if top_down:
+                ret = func(structure)
+                # Detect MAP_TO_NONE without tree_api import to avoid circular import.
+                if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+                    return None
+                return ret
+            else:
+                ret = func(structure)
+                if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+                    return None
+                return ret
 
-    structure = _dict_to_ordered_dict(structure)
+        # Non-leaf: must recur
+        if top_down:
+            ret = func(structure)
+            if ret is not None:
+                if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+                    return None
+                return ret
+            # recurse (structure is already mapped/converted as needed above)
+            new_children = [traverse(func, c, top_down=top_down) for c in children]
+            ret2 = torch_tree.tree_unflatten(new_children, treedef)
+            if isinstance(ret2, type) and ret2.__name__ == "MAP_TO_NONE":
+                return None
+            return ret2
+        else:
+            # Bottom-up: recur, then apply func
+            new_children = [traverse(func, c, top_down=top_down) for c in children]
+            traversed_structure = torch_tree.tree_unflatten(new_children, treedef)
+            ret = func(traversed_structure)
+            if ret is None:
+                return traversed_structure
+            if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+                return None
+            return ret
+
+    # Mapped dict/defaultdicts will end up here
     if top_down:
         ret = func(structure)
         if ret is None:
-            return traverse_children()
+            # dict/defaultdict can't have children, so just return as-is
+            return structure
     else:
-        traversed_structure = traverse_children()
-        ret = func(traversed_structure)
+        ret = func(structure)
         if ret is None:
-            return traversed_structure
+            return structure
     # Detect MAP_TO_NONE without tree_api import to avoid circular import.
     if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
         return None
