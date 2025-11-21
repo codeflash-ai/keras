@@ -14,7 +14,8 @@ from keras.src.losses.loss import squeeze_or_expand_to_same_rank
 
 class ExampleLoss(Loss):
     def call(self, y_true, y_pred):
-        return (y_true - y_pred) ** 2
+        diff = y_true - y_pred
+        return diff * diff
 
 
 class LossTest(testing.TestCase):
