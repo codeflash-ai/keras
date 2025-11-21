@@ -78,14 +78,25 @@ def solve_triangular(a, b, lower=False):
     if a.ndim == 2:
         return sl.solve_triangular(a, b, lower=lower)
 
-    _vectorized_solve_triangular = np.vectorize(
-        lambda a, b: sl.solve_triangular(a, b, lower=lower),
-        signature="(n,n),(n,m)->(n,m)",
-    )
+    # Instead of np.vectorize, which is slow, use a more efficient approach:
+    # We'll use np.apply_along_axis if b is 2D and a is 3D and broadcast if possible,
+    # or manually vectorized looping if needed
+    batch_shape = a.shape[:-2]
+    n, m = b.shape[-2], b.shape[-1] if b.ndim > a.ndim - 1 else 1
+    a_reshaped = a.reshape(-1, a.shape[-2], a.shape[-1])
+
     if b.ndim == a.ndim - 1:
-        b = np.expand_dims(b, axis=-1)
-        return _vectorized_solve_triangular(a, b).squeeze(axis=-1)
-    return _vectorized_solve_triangular(a, b)
+        b_reshaped = b.reshape(-1, b.shape[-1])
+        results = [sl.solve_triangular(ai, bi, lower=lower) for ai, bi in zip(a_reshaped, b_reshaped)]
+        results = np.stack(results, axis=0)
+        results = results.reshape(*batch_shape, results.shape[-1])
+        return results
+    else:
+        b_reshaped = b.reshape(-1, b.shape[-2], b.shape[-1])
+        results = [sl.solve_triangular(ai, bi, lower=lower) for ai, bi in zip(a_reshaped, b_reshaped)]
+        results = np.stack(results, axis=0)
+        results = results.reshape(*batch_shape, results.shape[-2], results.shape[-1])
+        return results
 
 
 def svd(x, full_matrices=True, compute_uv=True):
