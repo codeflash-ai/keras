@@ -48,6 +48,7 @@ def eigh(x):
     return jnp.linalg.eigh(x)
 
 
+@jax.jit
 def inv(a):
     return jnp.linalg.inv(a)
 
