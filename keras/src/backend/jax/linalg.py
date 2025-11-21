@@ -40,6 +40,7 @@ def det(a):
     return jnp.linalg.det(a)
 
 
+@jax.jit
 def eig(x):
     return jnp.linalg.eig(x)
 
