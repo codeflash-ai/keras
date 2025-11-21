@@ -421,23 +421,24 @@ def get_layer_index_bound_by_layer_name(layers, layer_range=None):
     else:
         return [0, len(layers)]
 
-    lower_index = [
-        idx
-        for idx, layer in enumerate(layers)
-        if re.match(layer_range[0], layer.name)
-    ]
-    upper_index = [
-        idx
-        for idx, layer in enumerate(layers)
-        if re.match(layer_range[1], layer.name)
-    ]
+    lower_pattern = re.compile(layer_range[0])
+    upper_pattern = re.compile(layer_range[1])
 
-    if not lower_index or not upper_index:
+    lower_index = None
+    upper_index = None
+
+    for idx, layer in enumerate(layers):
+        if lower_index is None and lower_pattern.match(layer.name):
+            lower_index = idx
+        if upper_pattern.match(layer.name):
+            upper_index = idx
+
+    if lower_index is None or upper_index is None:
         raise ValueError(
             "Passed layer_names do not match the layer names in the model. "
             f"Received: {layer_range}"
         )
 
-    if min(lower_index) > max(upper_index):
-        return [min(upper_index), max(lower_index) + 1]
-    return [min(lower_index), max(upper_index) + 1]
+    if lower_index > upper_index:
+        return [upper_index, lower_index + 1]
+    return [lower_index, upper_index + 1]
