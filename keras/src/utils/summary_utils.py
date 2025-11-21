@@ -18,8 +18,10 @@ from keras.src.utils import io_utils
 
 
 def count_params(weights):
-    shapes = [v.shape for v in weights]
-    return int(sum(math.prod(p) for p in shapes))
+    total = 0
+    for v in weights:
+        total += math.prod(v.shape)
+    return int(total)
 
 
 @functools.lru_cache(512)
