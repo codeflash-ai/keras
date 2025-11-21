@@ -23,35 +23,25 @@ def _tree_is_leaf(tree, is_leaf=None):
 def _dict_to_ordered_dict(structure):
     # We need to sort dict and defaultdict to ensure a deterministic order that
     # that is consistent with other tree implementations.
-    def func(x):
-        if type(x) is dict:
-            return {k: x[k] for k in sorted(x.keys())}
-        elif type(x) is defaultdict:
-            return defaultdict(
-                x.default_factory,
-                {k: x[k] for k in sorted(x.keys())},
-            )
-        return None
-
-    def traverse_children():
-        children, treedef = torch_tree.tree_flatten(
-            structure,
-            is_leaf=lambda x: x is not structure,
+    if type(structure) is dict:
+        return {k: structure[k] for k in sorted(structure.keys())}
+    elif type(structure) is defaultdict:
+        return defaultdict(
+            structure.default_factory,
+            {k: structure[k] for k in sorted(structure.keys())},
         )
-        if treedef.num_nodes == 1 and treedef.num_leaves == 1:
-            return structure
-        else:
-            return torch_tree.tree_unflatten(
-                [_dict_to_ordered_dict(c) for c in children],
-                treedef,
-            )
 
-    ret = func(structure)
-    if ret is None:
-        return traverse_children()
-    if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
-        return None
-    return ret
+    children, treedef = torch_tree.tree_flatten(
+        structure,
+        is_leaf=lambda x: x is not structure,
+    )
+    if treedef.num_nodes == 1 and treedef.num_leaves == 1:
+        return structure
+    else:
+        return torch_tree.tree_unflatten(
+            [_dict_to_ordered_dict(c) for c in children],
+            treedef,
+        )
 
 
 def is_nested(structure):
