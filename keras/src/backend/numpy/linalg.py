@@ -40,14 +40,21 @@ def lu_factor(a):
     if a.ndim == 2:
         return sl.lu_factor(a)
 
+    
+    # Use a for-loop for batch processing for better performance
+    batch_shape = a.shape[:-2]
     m, n = a.shape[-2:]
-    signature = "(m,n) -> (m,n), "
-    signature += "(m)" if m <= n else "(n)"
-    _lu_factor_gufunc = np.vectorize(
-        sl.lu_factor,
-        signature=signature,
-    )
-    return _lu_factor_gufunc(a)
+    out_shape = batch_shape
+    lu_list = []
+    piv_list = []
+    # Iterate over the batch using .reshape for batch view, minimizing temporary arrays
+    for sub_a in a.reshape(-1, m, n):
+        lu, piv = sl.lu_factor(sub_a)
+        lu_list.append(lu)
+        piv_list.append(piv)
+    lu_result = np.stack(lu_list).reshape(*out_shape, m, n)
+    piv_result = np.stack(piv_list).reshape(*out_shape, min(m, n))
+    return (lu_result, piv_result)
 
 
 def norm(x, ord=None, axis=None, keepdims=False):
