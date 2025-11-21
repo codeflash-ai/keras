@@ -2,6 +2,9 @@ import warnings
 
 from keras.src.api_export import keras_export
 from keras.src.backend.config import backend
+from keras.src.tree.dmtree_impl import map_structure as _map_structure
+from keras.src.tree.optree_impl import map_structure as _map_structure
+from keras.src.tree.torchtree_impl import map_structure as _map_structure
 from keras.src.utils.module_utils import dmtree
 from keras.src.utils.module_utils import optree
 
@@ -197,7 +200,7 @@ def map_structure(func, *structures, none_is_leaf=True):
             the nested structures don't match according to the rules of
             `assert_same_structure`.
     """
-    return tree_impl.map_structure(func, *structures, none_is_leaf=none_is_leaf)
+    return _map_structure(func, *structures, none_is_leaf=none_is_leaf)
 
 
 @keras_export("keras.tree.map_structure_up_to")
