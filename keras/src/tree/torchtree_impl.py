@@ -213,3 +213,7 @@ def map_shape_structure(func, structure):
     # consistent with other tree implementations.
     structure = _dict_to_ordered_dict(structure)
     return torch_tree.tree_map(func, structure, is_leaf=is_shape_tuple)
+
+def _tree_is_leaf(x):
+    # Avoid function call overhead in hot path; check common types explicitly
+    return not isinstance(x, (list, tuple, dict))
