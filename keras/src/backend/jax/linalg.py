@@ -12,14 +12,21 @@ from keras.src.backend.jax.core import convert_to_tensor
 def cholesky(a, upper=False):
     out = jnp.linalg.cholesky(a, upper=upper)
     try:
-        # In eager mode, raise for nan to
-        # achieve behavior consistency with numpy
-        if jnp.any(jnp.isnan(out)):
-            raise ValueError(
-                "Cholesky decomposition failed. "
-                "The input might not be a valid "
-                "positive definite matrix."
-            )
+        # This is eager mode if we're here; check dtypes first.
+        # Only check for NaN if the output is a float or complex type.
+        # This avoids unnecessary device-host transfers for non-float inputs.
+        kind = out.dtype.kind
+        if kind in {'f', 'c'} and out.size:
+            # Use jnp.isnan(out).any() as plain numpy if on CPU.
+            # For small arrays, .any() is fast and avoids explicit .astype.
+            # For very large arrays, this is bottlenecked by device-host transfer which is intrinsic.
+            # This is the minimum work necessary.
+            if jnp.isnan(out).any():
+                raise ValueError(
+                    "Cholesky decomposition failed. "
+                    "The input might not be a valid "
+                    "positive definite matrix."
+                )
     except jax.errors.TracerBoolConversionError:
         # Cannot raise for nan in tracing mode
         pass
