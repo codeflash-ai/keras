@@ -19,6 +19,8 @@ from keras.src.backend.common.dtypes import result_type
 from keras.src.backend.common.keras_tensor import KerasTensor
 from keras.src.backend.common.stateless_scope import StatelessScope
 
+_BFLOAT16_DTYPE = np.dtype("bfloat16")
+
 SUPPORTS_SPARSE_TENSORS = False
 SUPPORTS_RAGGED_TENSORS = False
 IS_THREAD_SAFE = True
@@ -106,18 +108,21 @@ def get_ov_output(x, ov_type=None):
             ov_type = Type.i32
         x = ov_opset.constant(x, ov_type).output(0)
     elif isinstance(x, np.ndarray):
-        if x.dtype == np.dtype("bfloat16"):
+        # Use global dtype constant for performance
+        if x.dtype is _BFLOAT16_DTYPE:
             x = ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
         else:
             x = ov_opset.constant(x).output(0)
     elif isinstance(x, (list, tuple)):
-        if isinstance(x, tuple):
+        # Only convert tuple to list if needed
+        if not isinstance(x, list):
             x = list(x)
         if ov_type is None:
             x = ov_opset.constant(x).output(0)
         else:
             x = ov_opset.constant(x, ov_type).output(0)
-    elif np.isscalar(x):
+    # More efficient Numpy scalar check
+    elif isinstance(x, np.generic):
         x = ov_opset.constant(x).output(0)
     elif isinstance(x, KerasVariable):
         if isinstance(x.value, OpenVINOKerasTensor):
