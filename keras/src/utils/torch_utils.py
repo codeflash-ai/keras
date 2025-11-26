@@ -9,6 +9,9 @@ from keras.src.layers import Layer
 from keras.src.ops import convert_to_numpy
 from keras.src.ops import convert_to_tensor
 from keras.src.saving.serialization_lib import in_safe_mode
+import torch
+
+_is_torch_ge_2_1_0 = parse(torch.__version__) >= parse("2.1.0")
 
 
 @keras_export("keras.layers.TorchModuleWrapper")
@@ -186,9 +189,7 @@ class TorchModuleWrapper(Layer):
 
 
 def no_grad(orig_func):
-    import torch
-
-    if parse(torch.__version__) >= parse("2.1.0"):
+    if _is_torch_ge_2_1_0:
         return torch.no_grad(orig_func)
     else:
         return orig_func
