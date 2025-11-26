@@ -16,6 +16,14 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_UPCAST_MAP = {
+    Type.boolean: Type.i32,
+    Type.i8: Type.i32,
+    Type.i16: Type.i32,
+    Type.u8: Type.u32,
+    Type.u16: Type.u32,
+}
+
 
 def add(x1, x2):
     element_type = None
@@ -259,12 +267,9 @@ def _resolve_axis(x, axis):
 
 def _upcast_type_if_needed(x):
     x_type = x.get_element_type()
-    if x_type == Type.boolean:
-        x = ov_opset.convert(x, Type.i32).output(0)
-    elif x_type in (Type.i8, Type.i16):
-        x = ov_opset.convert(x, Type.i32).output(0)
-    elif x_type in (Type.u8, Type.u16):
-        x = ov_opset.convert(x, Type.u32).output(0)
+    target_type = _UPCAST_MAP.get(x_type)
+    if target_type is not None:
+        return ov_opset.convert(x, target_type).output(0)
     return x
 
 
