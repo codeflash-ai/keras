@@ -112,6 +112,7 @@ class FBetaScore(Metric):
 
         self.average = average
         self.beta = beta
+        self.beta2 = beta ** 2
         self.threshold = threshold
         self.axis = None
         self._built = False
@@ -199,27 +200,40 @@ class FBetaScore(Metric):
         )
 
     def result(self):
+        epsilon = backend.epsilon()
+        beta2 = self.beta2
+
+        # Calculate denominator once
+        tp = self.true_positives
+        fp = self.false_positives
+        fn = self.false_negatives
+
         precision = ops.divide(
-            self.true_positives,
-            self.true_positives + self.false_positives + backend.epsilon(),
+            tp,
+            tp + fp + epsilon,
         )
         recall = ops.divide(
-            self.true_positives,
-            self.true_positives + self.false_negatives + backend.epsilon(),
+            tp,
+            tp + fn + epsilon,
         )
 
-        precision = ops.convert_to_tensor(precision, dtype=self.dtype)
-        recall = ops.convert_to_tensor(recall, dtype=self.dtype)
+        dtype = self.dtype
+        precision = ops.convert_to_tensor(precision, dtype=dtype)
+        recall = ops.convert_to_tensor(recall, dtype=dtype)
+
 
         mul_value = precision * recall
-        add_value = ((self.beta**2) * precision) + recall
-        mean = ops.divide(mul_value, add_value + backend.epsilon())
-        f1_score = mean * (1 + (self.beta**2))
+        add_value = (beta2 * precision) + recall
+        # Avoid repeated epsilon() call by using local
+        mean = ops.divide(mul_value, add_value + epsilon)
+        f1_score = mean * (1 + beta2)
+
 
         if self.average == "weighted":
+            iw = self.intermediate_weights
             weights = ops.divide(
-                self.intermediate_weights,
-                ops.sum(self.intermediate_weights) + backend.epsilon(),
+                iw,
+                ops.sum(iw) + epsilon,
             )
             f1_score = ops.sum(f1_score * weights)
 

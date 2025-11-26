@@ -7,6 +7,7 @@ from keras.src.api_export import keras_export
 from keras.src.backend import KerasTensor
 from keras.src.backend import any_symbolic_tensors
 from keras.src.backend.common.backend_utils import slice_along_axis
+from keras.src.backend.common.keras_tensor import KerasTensor
 from keras.src.ops.operation import Operation
 from keras.src.saving import serialization_lib
 from keras.src.utils import traceback_utils
@@ -994,7 +995,7 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
     >>> x = np.array([1, 2, 3])
     >>> y = keras.ops.convert_to_tensor(x)
     """
-    if any_symbolic_tensors((x,)):
+    if _is_symbolic_tensor(x):
         return ConvertToTensor(dtype=dtype, sparse=sparse, ragged=ragged)(x)
     return backend.core.convert_to_tensor(
         x, dtype=dtype, sparse=sparse, ragged=ragged
@@ -1253,3 +1254,7 @@ def custom_gradient(f):
     ```
     """
     return backend.core.custom_gradient(f)
+
+
+def _is_symbolic_tensor(x):
+    return isinstance(x, KerasTensor)

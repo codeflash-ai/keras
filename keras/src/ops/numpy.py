@@ -10,6 +10,7 @@ from keras.src.backend import any_symbolic_tensors
 from keras.src.backend.common import dtypes
 from keras.src.backend.common.backend_utils import canonicalize_axis
 from keras.src.backend.common.backend_utils import to_tuple_or_list
+from keras.src.backend.common.keras_tensor import KerasTensor
 from keras.src.ops import operation_utils
 from keras.src.ops.operation import Operation
 from keras.src.ops.operation_utils import broadcast_shapes
@@ -6926,7 +6927,7 @@ def divide(x1, x2):
     Returns:
         Output tensor, the quotient `x1/x2`, element-wise.
     """
-    if any_symbolic_tensors((x1, x2)):
+    if _is_symbolic_tensor(x1, x2):
         return Divide().symbolic_call(x1, x2)
     return backend.numpy.divide(x1, x2)
 
@@ -7274,7 +7275,7 @@ def mean(x, axis=None, keepdims=False):
     Returns:
         Output tensor containing the mean values.
     """
-    if any_symbolic_tensors((x,)):
+    if _is_symbolic_tensor(x):
         return Mean(axis=axis, keepdims=keepdims).symbolic_call(x)
     return backend.numpy.mean(x, axis=axis, keepdims=keepdims)
 
@@ -7360,7 +7361,7 @@ def sum(x, axis=None, keepdims=False):
     Returns:
         Output tensor containing the sum.
     """
-    if any_symbolic_tensors((x,)):
+    if _is_symbolic_tensor(x):
         return Sum(axis=axis, keepdims=keepdims).symbolic_call(x)
     return backend.numpy.sum(x, axis=axis, keepdims=keepdims)
 
@@ -7905,3 +7906,20 @@ def array_split(x, indices_or_sections, axis=0):
     return backend.numpy.array_split(
         x, indices_or_sections=indices_or_sections, axis=axis
     )
+
+
+def _is_symbolic_tensor(*tensors):
+    # Fast path for one or two arguments
+    if len(tensors) == 1:
+        return isinstance(tensors[0], KerasTensor)
+    elif len(tensors) == 2:
+        return isinstance(tensors[0], KerasTensor) or isinstance(
+            tensors[1], KerasTensor
+        )
+    # Fallback for more
+    from keras.src import tree
+
+    for x in tree.flatten(tensors):
+        if isinstance(x, KerasTensor):
+            return True
+    return False
