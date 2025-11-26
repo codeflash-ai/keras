@@ -1798,14 +1798,10 @@ def pad(x, pad_width, mode="constant", constant_values=None):
             constant_values, x.get_element_type()
         ).output(0)
 
-    # split pad_width into two tensors pads_begin and pads_end
-    pads_begin = []
-    pads_end = []
-    for pads_pair in pad_width:
-        pads_begin.append(pads_pair[0])
-        pads_end.append(pads_pair[1])
-    pads_begin = ov_opset.constant(pads_begin, Type.i32).output(0)
-    pads_end = ov_opset.constant(pads_end, Type.i32).output(0)
+    # split pad_width into two tensors pads_begin and pads_end (fast zip + unpack)
+    pads_begin, pads_end = zip(*pad_width)
+    pads_begin = ov_opset.constant(list(pads_begin), Type.i32).output(0)
+    pads_end = ov_opset.constant(list(pads_end), Type.i32).output(0)
     return OpenVINOKerasTensor(
         ov_opset.pad(x, pads_begin, pads_end, mode, pad_value).output(0)
     )
