@@ -16,6 +16,10 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_NEW_SHAPE_X1 = ov_opset.constant([-1, 1], Type.i32).output(0)
+
+_NEW_SHAPE_X2 = ov_opset.constant([1, -1], Type.i32).output(0)
+
 
 def add(x1, x2):
     element_type = None
@@ -1768,12 +1772,9 @@ def outer(x1, x2):
 
     x1, x2 = _align_operand_types(x1, x2, "outer()")
 
-    new_shape_x1 = ov_opset.constant([-1, 1], Type.i32).output(0)
-    new_shape_x2 = ov_opset.constant([1, -1], Type.i32).output(0)
-
     # Reshape directly from original tensors
-    x1_reshaped = ov_opset.reshape(x1, new_shape_x1, False).output(0)
-    x2_reshaped = ov_opset.reshape(x2, new_shape_x2, False).output(0)
+    x1_reshaped = ov_opset.reshape(x1, _NEW_SHAPE_X1, False).output(0)
+    x2_reshaped = ov_opset.reshape(x2, _NEW_SHAPE_X2, False).output(0)
 
     result = ov_opset.multiply(x1_reshaped, x2_reshaped).output(0)
 
