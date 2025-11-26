@@ -228,7 +228,8 @@ class Metric(KerasSaveable):
 
     def get_config(self):
         """Return the serializable config of the metric."""
-        return {"name": self.name, "dtype": self.dtype}
+        # Use self._dtype directly to avoid property lookup overhead
+        return {"name": self.name, "dtype": self._dtype}
 
     @classmethod
     def from_config(cls, config):

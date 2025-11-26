@@ -308,7 +308,8 @@ class IoU(_IoUBase):
             "axis": self.axis,
         }
         base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        # Use the dictionary unpacking form for efficient merging
+        return {**base_config, **config}
 
 
 @keras_export("keras.metrics.BinaryIoU")
