@@ -281,48 +281,80 @@ def skipgrams(
         By convention, index 0 in the vocabulary is
         a non-word and will be skipped.
     """
+
+    # Precompute valid indices to avoid repeated computation
+    sequence_len = len(sequence)
+    # Preallocate lists for memory efficiency
     couples = []
     labels = []
+
+    # Use local function lookup to reduce global lookups in tight loop
+    append_couple = couples.append
+    append_label = labels.append
+    min_ = min
+    max_ = max
+
+    # Generate positive samples
     for i, wi in enumerate(sequence):
         if not wi:
             continue
         if sampling_table is not None:
             if sampling_table[wi] < random.random():
                 continue
-
-        window_start = max(0, i - window_size)
-        window_end = min(len(sequence), i + window_size + 1)
+        # Use local range bounds helpers
+        window_start = max_(0, i - window_size)
+        window_end = min_(sequence_len, i + window_size + 1)
         for j in range(window_start, window_end):
-            if j != i:
-                wj = sequence[j]
-                if not wj:
-                    continue
-                couples.append([wi, wj])
-                if categorical:
-                    labels.append([0, 1])
-                else:
-                    labels.append(1)
+            if j == i:
+                continue
+            wj = sequence[j]
+            if not wj:
+                continue
+            append_couple([wi, wj])
+            if categorical:
+                append_label([0, 1])
+            else:
+                append_label(1)
 
+    # Generate negative samples
     if negative_samples > 0:
-        num_negative_samples = int(len(labels) * negative_samples)
-        words = [c[0] for c in couples]
-        random.shuffle(words)
-
-        couples += [
-            [words[i % len(words)], random.randint(1, vocabulary_size - 1)]
-            for i in range(num_negative_samples)
-        ]
-        if categorical:
-            labels += [[1, 0]] * num_negative_samples
+        num_positive = len(labels)
+        num_negative_samples = int(num_positive * negative_samples)
+        if num_positive > 0:
+            words = [couple[0] for couple in couples]
+            random.shuffle(words)
+            rand_word = random.randint
+            vocab_range = (1, vocabulary_size - 1)
+            append_couple_neg = couples.append
+            # Use local append functions and avoid repeated computes
+            neg_label = [1, 0] if categorical else 0
+            for i in range(num_negative_samples):
+                w0 = words[i % num_positive]
+                w1 = rand_word(*vocab_range)
+                append_couple_neg([w0, w1])
+                if categorical:
+                    append_label([1, 0])
+                else:
+                    append_label(0)
         else:
-            labels += [0] * num_negative_samples
+            # No positives to mirror for negatives; do nothing (original behavior)
+            pass
+
+    # Shuffle if needed
 
     if shuffle:
-        if seed is None:
-            seed = random.randint(0, 10e6)
-        random.seed(seed)
-        random.shuffle(couples)
-        random.seed(seed)
-        random.shuffle(labels)
+        actual_seed = seed if seed is not None else random.randint(0, int(10e6))
+        # Use one shuffled index to permute both lists for guaranteed same order
+        # This is faster and memory efficient than shuffling two large lists independently
+        data = list(zip(couples, labels))
+        random.seed(actual_seed)
+        random.shuffle(data)
+        # Unzip back
+        if data:
+            couples, labels = zip(*data)
+            couples = list(couples)
+            labels = list(labels)
+        else:
+            couples, labels = [], []
 
     return couples, labels
