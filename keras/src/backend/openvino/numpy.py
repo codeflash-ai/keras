@@ -16,6 +16,18 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_CONST_0 = ov_opset.constant(0, Type.i32)
+
+_CONST_1 = ov_opset.constant(1, Type.i32)
+
+_CONST_MINUS2 = ov_opset.constant([-2], Type.i32)
+
+_CONST_MINUS1 = ov_opset.constant([-1], Type.i32)
+
+_CONST_AXIS_0 = ov_opset.constant([0], Type.i32)
+
+_CONST_AXIS_1 = ov_opset.constant([1], Type.i32)
+
 
 def add(x1, x2):
     element_type = None
@@ -2231,12 +2243,17 @@ def tri(N, M=None, k=0, dtype=None):
     ov_dtype = OPENVINO_DTYPES[dtype]
 
     def ensure_constant(value, default_type=Type.i32):
+        # Avoid redundant constant creation for common values and types
+        if value == 0 and default_type == Type.i32:
+            return _CONST_0
+        if value == 1 and default_type == Type.i32:
+            return _CONST_1
         if isinstance(value, (int, float)):
             return ov_opset.constant(value, default_type)
         elif hasattr(value, "get_element_type"):
             if value.get_element_type() != Type.i32:
                 value = ov_opset.convert(value, Type.i32)
-            return ov_opset.squeeze(value, ov_opset.constant([0], Type.i32))
+            return ov_opset.squeeze(value, _CONST_AXIS_0)
         else:
             return ov_opset.constant(value, default_type)
 
@@ -2246,21 +2263,22 @@ def tri(N, M=None, k=0, dtype=None):
 
     # Create row and column indices
     row_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
+        _CONST_0,
         N_const,
-        ov_opset.constant(1, Type.i32),
+        _CONST_1,
         output_type=Type.i32,
     )
     col_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
+        _CONST_0,
         M_const,
-        ov_opset.constant(1, Type.i32),
+        _CONST_1,
         output_type=Type.i32,
     )
 
     # Reshape indices for broadcasting
-    row_idx = ov_opset.unsqueeze(row_range, ov_opset.constant([1], Type.i32))
-    col_idx = ov_opset.unsqueeze(col_range, ov_opset.constant([0], Type.i32))
+    row_idx = ov_opset.unsqueeze(row_range, _CONST_AXIS_1)
+    col_idx = ov_opset.unsqueeze(col_range, _CONST_AXIS_0)
+
 
     mask = ov_opset.less_equal(col_idx, ov_opset.add(row_idx, k_const))
 
@@ -2276,9 +2294,11 @@ def tril(x, k=0):
     x = get_ov_output(x)
     ov_type = x.get_element_type()
     shape = ov_opset.shape_of(x, Type.i32)
-    zero_const = ov_opset.constant(0, Type.i32)
-    minus2 = ov_opset.constant([-2], Type.i32)
-    minus1 = ov_opset.constant([-1], Type.i32)
+    zero_const = _CONST_0
+    minus2 = _CONST_MINUS2
+    minus1 = _CONST_MINUS1
+
+    # Avoid repeated gather constant construction
     M = ov_opset.squeeze(ov_opset.gather(shape, minus2, zero_const), zero_const)
     N = ov_opset.squeeze(ov_opset.gather(shape, minus1, zero_const), zero_const)
     tri_mask = tri(M, N, k=k, dtype="bool").output

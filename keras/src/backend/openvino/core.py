@@ -98,13 +98,11 @@ def align_operand_types(x1, x2, op_name):
 # for different input `x`
 def get_ov_output(x, ov_type=None):
     if isinstance(x, float):
-        if ov_type is None:
-            ov_type = Type.f32
-        x = ov_opset.constant(x, ov_type).output(0)
+        out_type = ov_type if ov_type is not None else Type.f32
+        x = ov_opset.constant(x, out_type).output(0)
     elif isinstance(x, int):
-        if ov_type is None:
-            ov_type = Type.i32
-        x = ov_opset.constant(x, ov_type).output(0)
+        out_type = ov_type if ov_type is not None else Type.i32
+        x = ov_opset.constant(x, out_type).output(0)
     elif isinstance(x, np.ndarray):
         if x.dtype == np.dtype("bfloat16"):
             x = ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
@@ -117,16 +115,18 @@ def get_ov_output(x, ov_type=None):
             x = ov_opset.constant(x).output(0)
         else:
             x = ov_opset.constant(x, ov_type).output(0)
-    elif np.isscalar(x):
-        x = ov_opset.constant(x).output(0)
     elif isinstance(x, KerasVariable):
-        if isinstance(x.value, OpenVINOKerasTensor):
-            return x.value.output
-        x = ov_opset.constant(x.value.data).output(0)
+        val = x.value
+        if isinstance(val, OpenVINOKerasTensor):
+            return val.output
+        x = ov_opset.constant(val.data).output(0)
     elif isinstance(x, OpenVINOKerasTensor):
-        x = x.output
+        # Early return avoids unnecessary assignments
+        return x.output
     elif isinstance(x, Tensor):
         x = ov_opset.constant(x.data).output(0)
+    elif np.isscalar(x):
+        x = ov_opset.constant(x).output(0)
     else:
         raise ValueError(
             "unsupported type of `x` to create ov.Output: {}".format(type(x))
