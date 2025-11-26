@@ -774,62 +774,64 @@ def diff(a, n=1, axis=-1):
         return OpenVINOKerasTensor(get_ov_output(a))
     if n < 0:
         raise ValueError(f"order must be non-negative but got {repr(n)}")
-    a = get_ov_output(a)
-    a_type = a.get_element_type()
+    a_out = get_ov_output(a)
+    a_type = a_out.get_element_type()
     if isinstance(a, np.ndarray):
         rank = a.ndim
     else:
-        rank = a.get_partial_shape().rank.get_length()
+        rank = a_out.get_partial_shape().rank.get_length()
     if axis < 0:
-        axis = axis + rank
-    result = a
-    for _ in range(n):
-        rank = result.get_partial_shape().rank.get_length()
-        strides = ov_opset.constant(
-            np.array([1] * rank, dtype=np.int64), Type.i64
-        ).output(0)
+        axis += rank
 
-        begin_upper_list = [0] * rank
-        begin_upper_list[axis] = 1
-        begin_upper = ov_opset.constant(
-            np.array(begin_upper_list, dtype=np.int64), Type.i64
-        ).output(0)
-        end_upper = ov_opset.constant(
-            np.array([0] * rank, dtype=np.int64), Type.i64
-        ).output(0)
-        begin_mask_upper = [1] * rank
-        begin_mask_upper[axis] = 0
-        end_mask_upper = [1] * rank
+    # Prepare loop-invariant stride and mask lists
+    strides_arr = np.array([1] * rank, dtype=np.int64)
+    strides = ov_opset.constant(strides_arr, Type.i64).output(0)
+    zeros_arr = np.zeros(rank, dtype=np.int64)
+    zeros_const = ov_opset.constant(zeros_arr, Type.i64).output(0)
+    ones_mask = [1] * rank
+
+    # These will be used as base for the masks, copy for mutation per-iteration
+    begin_upper_base = [0] * rank
+    begin_upper_base[axis] = 1
+    begin_mask_upper_base = [1] * rank
+    begin_mask_upper_base[axis] = 0
+
+    end_upper_base = [0] * rank
+    end_mask_upper_base = ones_mask  # [1]*rank
+
+    begin_lower_base = [0] * rank
+    end_lower_base = [0] * rank
+    end_lower_base[axis] = -1
+    begin_mask_lower_base = [1] * rank
+    end_mask_lower_base = [1] * rank
+    end_mask_lower_base[axis] = 0
+
+    result = a_out
+    for _ in range(n):
+        # Use precomputed arrays/lists and avoid re-allocation
+        begin_upper = ov_opset.constant(np.array(begin_upper_base, dtype=np.int64), Type.i64).output(0)
+        end_upper = zeros_const
         upper = ov_opset.strided_slice(
             data=result,
             begin=begin_upper,
             end=end_upper,
             strides=strides,
-            begin_mask=begin_mask_upper,
-            end_mask=end_mask_upper,
+            begin_mask=begin_mask_upper_base,
+            end_mask=end_mask_upper_base,
             new_axis_mask=[],
             shrink_axis_mask=[],
             ellipsis_mask=[],
         ).output(0)
 
-        begin_lower = ov_opset.constant(
-            np.array([0] * rank, dtype=np.int64), Type.i64
-        ).output(0)
-        end_lower_list = [0] * rank
-        end_lower_list[axis] = -1
-        end_lower = ov_opset.constant(
-            np.array(end_lower_list, dtype=np.int64), Type.i64
-        ).output(0)
-        begin_mask_lower = [1] * rank
-        end_mask_lower = [1] * rank
-        end_mask_lower[axis] = 0
+        begin_lower = zeros_const
+        end_lower = ov_opset.constant(np.array(end_lower_base, dtype=np.int64), Type.i64).output(0)
         lower = ov_opset.strided_slice(
             data=result,
             begin=begin_lower,
             end=end_lower,
             strides=strides,
-            begin_mask=begin_mask_lower,
-            end_mask=end_mask_lower,
+            begin_mask=begin_mask_lower_base,
+            end_mask=end_mask_lower_base,
             new_axis_mask=[],
             shrink_axis_mask=[],
             ellipsis_mask=[],
