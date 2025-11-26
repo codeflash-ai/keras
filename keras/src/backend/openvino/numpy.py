@@ -16,6 +16,11 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_CONSTANT_FLATTEN_SHAPE = ov_opset.constant([-1], Type.i32).output(0)
+
+# Caching constant nodes for commonly used axis values to avoid repeated construction
+_CONSTANT_AXIS_CACHE: dict = {}
+
 
 def add(x1, x2):
     element_type = None
@@ -248,13 +253,24 @@ def _resolve_axis(x, axis):
     if axis == () or axis == []:
         return x, None
     if axis is None:
-        flatten_shape = ov_opset.constant([-1], Type.i32).output(0)
-        x = ov_opset.reshape(x, flatten_shape, False).output(0)
+        # Use cached flatten shape constant (-1)
+        x = ov_opset.reshape(x, _CONSTANT_FLATTEN_SHAPE, False).output(0)
         axis = 0
     if isinstance(axis, tuple):
         axis = list(axis)
-    axis = ov_opset.constant(axis, Type.i32).output(0)
-    return x, axis
+    axis_key = None
+    if isinstance(axis, int):
+        axis_key = axis
+    elif isinstance(axis, list) and len(axis) == 1 and isinstance(axis[0], int):
+        axis_key = axis[0]
+    if axis_key is not None:
+        if axis_key not in _CONSTANT_AXIS_CACHE:
+            _CONSTANT_AXIS_CACHE[axis_key] = ov_opset.constant([axis_key], Type.i32).output(0)
+        axis_out = _CONSTANT_AXIS_CACHE[axis_key]
+    else:
+        # Fallback for non-cached or multi-value axes: create constant each time
+        axis_out = ov_opset.constant(axis, Type.i32).output(0)
+    return x, axis_out
 
 
 def _upcast_type_if_needed(x):
