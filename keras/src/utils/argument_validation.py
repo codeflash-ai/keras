@@ -58,15 +58,19 @@ def standardize_padding(value, allow_causal=False):
         return value
     padding = value.lower()
     if allow_causal:
-        allowed_values = {"valid", "same", "causal"}
+        if padding not in ("valid", "same", "causal"):
+            raise ValueError(
+                "The `padding` argument must be a list/tuple or one of "
+                '{"valid", "same", "causal"}. '
+                f"Received: {padding}"
+            )
     else:
-        allowed_values = {"valid", "same"}
-    if padding not in allowed_values:
-        raise ValueError(
-            "The `padding` argument must be a list/tuple or one of "
-            f"{allowed_values}. "
-            f"Received: {padding}"
-        )
+        if padding not in ("valid", "same"):
+            raise ValueError(
+                "The `padding` argument must be a list/tuple or one of "
+                '{"valid", "same"}. '
+                f"Received: {padding}"
+            )
     return padding
 
 
