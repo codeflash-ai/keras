@@ -231,16 +231,14 @@ class FBetaScore(Metric):
     def get_config(self):
         """Returns the serializable config of the metric."""
 
-        config = {
+        # Avoid super() call and dict merging by constructing config directly
+        return {
             "name": self.name,
             "dtype": self.dtype,
             "average": self.average,
             "beta": self.beta,
             "threshold": self.threshold,
         }
-
-        base_config = super().get_config()
-        return {**base_config, **config}
 
     def reset_state(self):
         for v in self.variables:
