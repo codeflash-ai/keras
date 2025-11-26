@@ -185,10 +185,9 @@ def is_tf_dataset(x):
 
 def is_torch_dataloader(x):
     if hasattr(x, "__class__"):
-        for parent in x.__class__.__mro__:
-            if parent.__name__ == "DataLoader" and "torch.utils.data" in str(
-                parent.__module__
-            ):
+        mro = x.__class__.__mro__
+        for parent in mro:
+            if parent.__name__ == "DataLoader" and "torch.utils.data" in parent.__module__:
                 return True
     return False
 
