@@ -3,6 +3,8 @@ from keras.src import ops
 from keras.src.api_export import keras_export
 from keras.src.backend.common import global_state
 
+_default_policy_cache = {}
+
 QUANTIZATION_MODES = ("int8", "float8", "int4", "gptq")
 
 
@@ -418,7 +420,12 @@ def dtype_policy():
     """Returns the current default dtype policy object."""
     policy = global_state.get_global_attribute("dtype_policy", None)
     if policy is None:
-        policy = DTypePolicy(backend.floatx())
+        floatx_value = backend.floatx()
+        cached = _default_policy_cache.get(floatx_value)
+        if cached is None:
+            cached = DTypePolicy(floatx_value)
+            _default_policy_cache[floatx_value] = cached
+        policy = cached
         set_dtype_policy(policy)
     return policy
 
