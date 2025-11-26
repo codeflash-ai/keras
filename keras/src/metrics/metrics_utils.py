@@ -12,14 +12,12 @@ NEG_INF = -1e10
 
 def assert_thresholds_range(thresholds):
     if thresholds is not None:
-        invalid_thresholds = [
-            t for t in thresholds if t is None or t < 0 or t > 1
-        ]
-        if invalid_thresholds:
-            raise ValueError(
-                "Threshold values must be in [0, 1]. "
-                f"Received: {invalid_thresholds}"
-            )
+        for t in thresholds:
+            if t is None or t < 0 or t > 1:
+                raise ValueError(
+                    "Threshold values must be in [0, 1]. "
+                    f"Received: [{t}]"
+                )
 
 
 def parse_init_thresholds(thresholds, default_threshold=0.5):
