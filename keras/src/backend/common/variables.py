@@ -573,19 +573,34 @@ def initialize_all_variables():
 def standardize_dtype(dtype):
     if dtype is None:
         return config.floatx()
-    dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
+    # Fast path for direct str and mappings
+    mapped_dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype)
+    if mapped_dtype is not None:
+        dtype = mapped_dtype
     if hasattr(dtype, "name"):
-        dtype = dtype.name
-    elif hasattr(dtype, "__name__"):
-        dtype = dtype.__name__
-    elif hasattr(dtype, "__str__") and (
-        "torch" in str(dtype) or "jax.numpy" in str(dtype)
-    ):
-        dtype = str(dtype).split(".")[-1]
-
-    if dtype not in dtypes.ALLOWED_DTYPES:
-        raise ValueError(f"Invalid dtype: {dtype}")
-    return dtype
+        return (
+            dtype.name
+            if dtype.name in dtypes.ALLOWED_DTYPES
+            else _raise_invalid(dtype.name)
+        )
+    if hasattr(dtype, "__name__"):
+        dtype_name = dtype.__name__
+        if dtype_name in dtypes.ALLOWED_DTYPES:
+            return dtype_name
+        raise ValueError(f"Invalid dtype: {dtype_name}")
+    # Avoid string conversion unless pattern is likely (torch/jax)
+    str_dtype = None
+    if hasattr(dtype, "__str__"):
+        str_dtype = str(dtype)
+        if "torch" in str_dtype or "jax.numpy" in str_dtype:
+            dtype_name = str_dtype.split(".")[-1]
+            if dtype_name in dtypes.ALLOWED_DTYPES:
+                return dtype_name
+            raise ValueError(f"Invalid dtype: {dtype_name}")
+    if isinstance(dtype, str):
+        if dtype in dtypes.ALLOWED_DTYPES:
+            return dtype
+    raise ValueError(f"Invalid dtype: {dtype}")
 
 
 def standardize_shape(shape):
@@ -654,6 +669,10 @@ def is_int_dtype(dtype):
 
 def get_autocast_scope():
     return global_state.get_global_attribute("autocast_scope")
+
+
+def _raise_invalid(dtype):
+    raise ValueError(f"Invalid dtype: {dtype}")
 
 
 class AutocastScope:
