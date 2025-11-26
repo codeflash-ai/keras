@@ -655,8 +655,10 @@ def functional_like_constructor(cls):
 
 
 def unpack_singleton(x):
-    if isinstance(x, (list, tuple)) and len(x) == 1:
-        return x[0]
+    # Use type check before len to avoid unnecessary work on non-sequences
+    if type(x) is list or type(x) is tuple:
+        if len(x) == 1:
+            return x[0]
     return x
 
 
