@@ -2610,17 +2610,14 @@ def tversky(y_true, y_pred, alpha=0.5, beta=0.5, axis=None):
     y_pred = ops.convert_to_tensor(y_pred)
     y_true = ops.cast(y_true, y_pred.dtype)
 
-    inputs = y_true
-    targets = y_pred
+    # Compute intersection, FP, FN in a memory-efficient manner.
+    intersection = ops.sum(y_true * y_pred, axis=axis)
+    fp = ops.sum(y_true * (1 - y_pred), axis=axis)
+    fn = ops.sum((1 - y_true) * y_pred, axis=axis)
 
-    intersection = ops.sum(inputs * targets, axis=axis)
-    fp = ops.sum((1 - targets) * inputs, axis=axis)
-    fn = ops.sum(targets * (1 - inputs), axis=axis)
+    denominator = intersection + alpha * fp + beta * fn + backend.epsilon()
+    tversky = ops.divide(intersection, denominator)
 
-    tversky = ops.divide(
-        intersection,
-        intersection + fp * alpha + fn * beta + backend.epsilon(),
-    )
 
     return 1 - tversky
 
