@@ -21,12 +21,15 @@ class DropoutRNNCell:
 
     def _create_dropout_mask(self, step_input, dropout_rate):
         count = getattr(self, "dropout_mask_count", None)
-        ones = ops.ones_like(step_input)
         if count is None:
+            # Only one mask needed: call ones_like once
+            ones = ops.ones_like(step_input)
             return backend.random.dropout(
                 ones, rate=dropout_rate, seed=self.seed_generator
             )
-        else:
+        elif count > 0:
+            ones = ops.ones_like(step_input)
+            # Use list comprehension with the same 'ones' for all; broadcasting is uniform
             return [
                 backend.random.dropout(
                     ones, rate=dropout_rate, seed=self.seed_generator
@@ -34,14 +37,17 @@ class DropoutRNNCell:
                 for _ in range(count)
             ]
 
+        else:
+            # Unlikely, but if count==0 just return empty list (preserve behavior)
+            return []
+
     def get_dropout_mask(self, step_input):
-        if not hasattr(self, "_dropout_mask"):
-            self._dropout_mask = None
-        if self._dropout_mask is None and self.dropout > 0:
-            self._dropout_mask = self._create_dropout_mask(
-                step_input, self.dropout
-            )
-        return self._dropout_mask
+        # Avoid hasattr and attribute assignment every call; shortcut for common case
+        mask = getattr(self, "_dropout_mask", None)
+        if mask is None and self.dropout > 0:
+            mask = self._create_dropout_mask(step_input, self.dropout)
+            self._dropout_mask = mask
+        return getattr(self, "_dropout_mask", None)
 
     def get_recurrent_dropout_mask(self, step_input):
         if not hasattr(self, "_recurrent_dropout_mask"):
