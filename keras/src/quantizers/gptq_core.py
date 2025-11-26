@@ -196,19 +196,18 @@ def get_dataloader(
 def _get_backbone_layers(model):
     """Extract embedding and transformer layers from a KerasHub model."""
     backbone = model.backbone
-    if not hasattr(backbone, "transformer_layers"):
+    transformer_blocks = getattr(backbone, "transformer_layers", None)
+    if transformer_blocks is None:
         raise ValueError(
             "The model's backbone does not have a 'transformer_layers' "
             "attribute. Please ensure you are using a standard KerasHub "
             "transformer model."
         )
-    transformer_blocks = backbone.transformer_layers
 
-    embedding_layer = None
-    if hasattr(backbone, "token_embedding"):
-        embedding_layer = backbone.token_embedding
-    elif hasattr(backbone, "embedding"):
-        embedding_layer = backbone.embedding
+    embedding_layer = getattr(backbone, "token_embedding", None)
+    if embedding_layer is None:
+        embedding_layer = getattr(backbone, "embedding", None)
+    
     return embedding_layer, transformer_blocks
 
 
