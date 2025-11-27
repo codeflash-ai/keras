@@ -13,6 +13,7 @@ from keras.src.utils.naming import auto_name
 
 
 class Cross(KerasSaveable):
+
     def __init__(self, feature_names, crossing_dim, output_mode="one_hot"):
         if output_mode not in {"int", "one_hot"}:
             raise ValueError(
@@ -20,7 +21,10 @@ class Cross(KerasSaveable):
                 "Expected one of {'int', 'one_hot'}. "
                 f"Received: output_mode={output_mode}"
             )
-        self.feature_names = tuple(feature_names)
+        # Avoid unnecessary tuple construction if already a tuple
+        self.feature_names = (
+            feature_names if isinstance(feature_names, tuple) else tuple(feature_names)
+        )
         self.crossing_dim = crossing_dim
         self.output_mode = output_mode
 
