@@ -44,6 +44,7 @@ class Cross(KerasSaveable):
 
 
 class Feature(KerasSaveable):
+
     def __init__(self, dtype, preprocessor, output_mode):
         if output_mode not in {"int", "one_hot", "float"}:
             raise ValueError(
@@ -52,10 +53,9 @@ class Feature(KerasSaveable):
                 f"Received: output_mode={output_mode}"
             )
         self.dtype = dtype
-        if isinstance(preprocessor, dict):
-            preprocessor = serialization_lib.deserialize_keras_object(
-                preprocessor
-            )
+        # Optimize: Only call deserialization if absolutely necessary
+        if isinstance(preprocessor, dict) and preprocessor.get("class_name") is not None:
+            preprocessor = serialization_lib.deserialize_keras_object(preprocessor)
         self.preprocessor = preprocessor
         self.output_mode = output_mode
 
