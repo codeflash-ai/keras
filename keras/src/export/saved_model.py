@@ -659,10 +659,10 @@ def export_saved_model(
 def _print_signature(fn, name, verbose=True):
     concrete_fn = fn._list_all_concrete_functions()[0]
     pprinted_signature = concrete_fn.pretty_printed_signature(verbose=verbose)
-    lines = pprinted_signature.split("\n")
-    lines = [f"* Endpoint '{name}'"] + lines[1:]
-    endpoint = "\n".join(lines)
-    return endpoint
+    first_newline = pprinted_signature.find('\n')
+    if first_newline == -1:
+        return f"* Endpoint '{name}'"
+    return f"* Endpoint '{name}'\n{pprinted_signature[first_newline + 1:]}"
 
 
 def _list_variables_used_by_fns(fns):
