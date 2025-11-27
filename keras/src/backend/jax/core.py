@@ -7,14 +7,13 @@ from jax import export as jax_export
 
 from keras.src import tree
 from keras.src.backend import config
-from keras.src.backend.common import KerasVariable
-from keras.src.backend.common import global_state
-from keras.src.backend.common import standardize_dtype
+from keras.src.backend.common import (KerasVariable, global_state,
+                                      standardize_dtype)
 from keras.src.backend.common.keras_tensor import KerasTensor
 from keras.src.backend.common.name_scope import name_scope as base_name_scope
-from keras.src.backend.common.stateless_scope import StatelessScope
-from keras.src.backend.common.stateless_scope import get_stateless_scope
-from keras.src.backend.common.stateless_scope import in_stateless_scope
+from keras.src.backend.common.stateless_scope import (StatelessScope,
+                                                      get_stateless_scope,
+                                                      in_stateless_scope)
 from keras.src.backend.common.symbolic_scope import SymbolicScope
 from keras.src.backend.jax import distribution_lib
 
@@ -239,33 +238,31 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
     if ragged:
         raise ValueError("`ragged=True` is not supported with jax backend")
     if dtype is not None:
-        dtype = standardize_dtype(dtype)
-    if isinstance(x, (jnp.ndarray, jax.Array)) and (
-        dtype is None or x.dtype == dtype
-    ):
-        # Skip the conversion early if the instance is already a JAX array.
-        # This is important in the multi-process context since jax.array(x) for
-        # an existing distributed jax array will raise error.
-        return x
+        dtype_ = standardize_dtype(dtype)
+    else:
+        dtype_ = None
 
-    if isinstance(x, Variable):
-        if dtype is not None and x.dtype != dtype:
-            return x.value.astype(dtype)
+    if isinstance(x, (jnp.ndarray, jax.Array)):
+        if dtype_ is None or x.dtype == dtype_:
+            return x
+    elif isinstance(x, Variable):
+        if dtype_ is not None and x.dtype != dtype_:
+            return x.value.astype(dtype_)
         return x.value
-
-    if isinstance(x, jax_sparse.JAXSparse):
+    elif isinstance(x, jax_sparse.JAXSparse):
         if sparse is not None and not sparse:
             x = x.todense()
-        elif dtype is not None and x.dtype != dtype:
-            return x.astype(dtype)
+        elif dtype_ is not None and x.dtype != dtype_:
+            return x.astype(dtype_)
         else:
             return x
 
-    if not is_tensor(x) and standardize_dtype(dtype) == "bfloat16":
+    # Only call standardize_dtype once per path
+    if not is_tensor(x) and dtype_ == "bfloat16":
         # Can't create bfloat16 arrays on the fly (e.g. from a h5 Dataset).
         # Instead we convert "as is" (to stored dtype) and cast.
-        return jnp.asarray(x).astype(dtype)
-    return jnp.asarray(x, dtype=dtype)
+        return jnp.asarray(x).astype(dtype_)
+    return jnp.asarray(x, dtype=dtype_)
 
 
 def convert_to_numpy(x):
