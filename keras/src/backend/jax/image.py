@@ -57,7 +57,10 @@ def rgb_to_grayscale(images, data_format=None):
     # Convert to floats
     original_dtype = images.dtype
     compute_dtype = backend.result_type(images.dtype, float)
-    images = images.astype(compute_dtype)
+    if original_dtype != compute_dtype:
+        images = images.astype(compute_dtype)
+
+    # Ref: tf.image.rgb_to_grayscale
 
     # Ref: tf.image.rgb_to_grayscale
     rgb_weights = convert_to_tensor(
@@ -65,7 +68,9 @@ def rgb_to_grayscale(images, data_format=None):
     )
     images = jnp.tensordot(images, rgb_weights, axes=(channels_axis, -1))
     images = jnp.expand_dims(images, axis=channels_axis)
-    return images.astype(original_dtype)
+    if images.dtype != original_dtype:
+        images = images.astype(original_dtype)
+    return images
 
 
 def rgb_to_hsv(images, data_format=None):
