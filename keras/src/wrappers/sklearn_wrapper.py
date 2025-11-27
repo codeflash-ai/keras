@@ -184,7 +184,8 @@ class SKLBase(BaseEstimator):
         # This is here to raise the right error in case of invalid target
         type_of_target(y, raise_unknown=True)
         if reset:
-            self._target_encoder = TargetReshaper().fit(y)
+            self._target_encoder = TargetReshaper()
+            self._target_encoder.fit(y)
         return self._target_encoder.transform(y)
 
     def _reverse_process_target(self, y):
