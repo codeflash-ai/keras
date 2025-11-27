@@ -507,7 +507,7 @@ def perspective_transform(
     data_format=None,
 ):
     data_format = backend.standardize_data_format(data_format)
-    if interpolation not in AFFINE_TRANSFORM_INTERPOLATIONS.keys():
+    if interpolation not in AFFINE_TRANSFORM_INTERPOLATIONS:
         raise ValueError(
             "Invalid value for argument `interpolation`. Expected of one "
             f"{set(AFFINE_TRANSFORM_INTERPOLATIONS.keys())}. Received: "
@@ -551,44 +551,60 @@ def perspective_transform(
     if data_format == "channels_first":
         images = jnp.transpose(images, (0, 2, 3, 1))
 
-    _, height, width, _ = images.shape
+    batch_size, height, width, channels = images.shape
+
+    # Compute homography transforms for the batch
     transforms = compute_homography_matrix(
         jnp.asarray(start_points, dtype="float32"),
         jnp.asarray(end_points, dtype="float32"),
     )
 
-    x, y = jnp.meshgrid(jnp.arange(width), jnp.arange(height), indexing="xy")
-    grid = jnp.stack([x.ravel(), y.ravel(), jnp.ones_like(x).ravel()], axis=0)
+    # Precompute the sampling grid for all images (assumes identical spatial shape per image in batch)
+    x = jnp.arange(width)
+    y = jnp.arange(height)
+    xx, yy = jnp.meshgrid(x, y, indexing="xy")
+    ones = jnp.ones_like(xx)
+    grid = jnp.stack([xx.ravel(), yy.ravel(), ones.ravel()], axis=0)  # (3, H*W)
 
-    def transform_coordinates(transform):
-        denom = transform[6] * grid[0] + transform[7] * grid[1] + 1.0
+    def transform_coordinates(transforms):
+        # transforms: (8,) or (N,8)
+        # grid: (3, H*W)
+        # Returns: (N, 2, H*W) or (2, H*W)
+        # Using JAX vectorization: batch over first dim if present
+        # Reshape transforms for broadcasting: [.., 8]
+        denom = transforms[..., 6:7] * grid[0] + transforms[..., 7:8] * grid[1] + 1.0
         x_in = (
-            transform[0] * grid[0] + transform[1] * grid[1] + transform[2]
+            transforms[..., 0:1] * grid[0]
+            + transforms[..., 1:2] * grid[1]
+            + transforms[..., 2:3]
         ) / denom
         y_in = (
-            transform[3] * grid[0] + transform[4] * grid[1] + transform[5]
+            transforms[..., 3:4] * grid[0]
+            + transforms[..., 4:5] * grid[1]
+            + transforms[..., 5:6]
         ) / denom
-        return jnp.stack([y_in, x_in], axis=0)
+        coords = jnp.stack([y_in, x_in], axis=-2)  # shape (..., 2, H*W)
+        return coords
 
-    transformed_coords = jax.vmap(transform_coordinates)(transforms)
+    # Batch vectorized (transforms.shape[0], 2, H*W)
+    transformed_coords = transform_coordinates(transforms)
+
+    # Vectorized interpolation over batch and channels
 
     def interpolate_image(image, coords):
-        def interpolate_channel(channel_img):
+        image_reshaped = jnp.moveaxis(image, -1, 0)  # (C, H, W)
+        def interp(cimg):
             return jax.scipy.ndimage.map_coordinates(
-                channel_img,
+                cimg,
                 coords,
                 order=AFFINE_TRANSFORM_INTERPOLATIONS[interpolation],
                 mode="constant",
                 cval=fill_value,
             ).reshape(height, width)
+        return jax.vmap(interp, in_axes=0)(image_reshaped)  # (C, H, W)
 
-        return jax.vmap(interpolate_channel, in_axes=0)(
-            jnp.moveaxis(image, -1, 0)
-        )
-
-    output = jax.vmap(interpolate_image, in_axes=(0, 0))(
-        images, transformed_coords
-    )
+    # Vectorize over the batch
+    output = jax.vmap(interpolate_image, in_axes=(0, 0))(images, transformed_coords)
     output = jnp.moveaxis(output, 1, -1)
 
     if data_format == "channels_first":
@@ -605,33 +621,33 @@ def compute_homography_matrix(start_points, end_points):
 
     zeros = jnp.zeros_like(end_x)
     ones = jnp.ones_like(end_x)
+    neg_ex = -end_x
+    neg_ey = -end_y
 
-    x_rows = jnp.stack(
-        [
-            end_x,
-            end_y,
-            ones,
-            zeros,
-            zeros,
-            zeros,
-            -start_x * end_x,
-            -start_x * end_y,
-        ],
-        axis=-1,
-    )
-    y_rows = jnp.stack(
-        [
-            zeros,
-            zeros,
-            zeros,
-            end_x,
-            end_y,
-            ones,
-            -start_y * end_x,
-            -start_y * end_y,
-        ],
-        axis=-1,
-    )
+    x_stack = [
+        end_x,
+        end_y,
+        ones,
+        zeros,
+        zeros,
+        zeros,
+        -start_x * end_x,
+        -start_x * end_y,
+    ]
+    y_stack = [
+        zeros,
+        zeros,
+        zeros,
+        end_x,
+        end_y,
+        ones,
+        -start_y * end_x,
+        -start_y * end_y,
+    ]
+    x_rows = jnp.stack(x_stack, axis=-1)
+    y_rows = jnp.stack(y_stack, axis=-1)
+
+    # Concatenate in a fused op for batch efficiency
 
     coefficient_matrix = jnp.concatenate([x_rows, y_rows], axis=1)
 
