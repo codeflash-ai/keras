@@ -10,7 +10,8 @@ from keras.src import testing
 
 class CenterCropTest(testing.TestCase):
     def np_center_crop(self, img, h_new, w_new, data_format="channels_last"):
-        img = np.array(img)
+        if not isinstance(img, np.ndarray):
+            img = np.array(img)
         if img.ndim == 4:
             if data_format == "channels_last":
                 _, h, w = img.shape[:3]
