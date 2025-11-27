@@ -148,12 +148,29 @@ def decode_predictions(preds, top=5):
         )
         with open(fpath) as f:
             CLASS_INDEX = json.load(f)
-    results = []
+    # Efficient lookup outside loop
+    class_index = CLASS_INDEX
+
     preds = ops.convert_to_numpy(preds)
+    results = []
     for pred in preds:
-        top_indices = pred.argsort()[-top:][::-1]
-        result = [tuple(CLASS_INDEX[str(i)]) + (pred[i],) for i in top_indices]
-        result.sort(key=lambda x: x[2], reverse=True)
+        # Use argpartition to get indices of top K
+        if top < pred.shape[0]:
+            top_indices = np.argpartition(pred, -top)[-top:]
+            # Now sort the top indices by prediction score descending
+            top_indices = top_indices[np.argsort(pred[top_indices])[::-1]]
+        else:
+            # If top >= 1000, fallback to full sort
+            top_indices = np.argsort(pred)[::-1]
+
+        # Precompute string keys for lookup to avoid repeated str() calls
+        str_indices = [str(i) for i in top_indices]
+        # Build tuple (class_name, description, score)
+        result = [
+            tuple(class_index[idx_str]) + (pred[idx],)
+            for idx_str, idx in zip(str_indices, top_indices)
+        ]
+        # No need to sort explicitly; already sorted
         results.append(result)
     return results
 
@@ -323,78 +340,54 @@ def obtain_input_shape(
     """
     if weights != "imagenet" and input_shape and len(input_shape) == 3:
         if data_format == "channels_first":
-            correct_channel_axis = 1 if len(input_shape) == 4 else 0
-            if input_shape[correct_channel_axis] not in {1, 3}:
+            channel_axis = 0
+            if input_shape[channel_axis] not in {1, 3}:
                 warnings.warn(
                     "This model usually expects 1 or 3 input channels. "
                     "However, it was passed an input_shape "
-                    f"with {input_shape[0]} input channels.",
+                    f"with {input_shape[channel_axis]} input channels.",
                     stacklevel=2,
                 )
-            default_shape = (input_shape[0], default_size, default_size)
+            default_shape = (
+                input_shape[channel_axis],
+                default_size,
+                default_size,
+            )
         else:
-            if input_shape[-1] not in {1, 3}:
+            channel_axis = -1
+            if input_shape[channel_axis] not in {1, 3}:
                 warnings.warn(
                     "This model usually expects 1 or 3 input channels. "
                     "However, it was passed an input_shape "
-                    f"with {input_shape[-1]} input channels.",
+                    f"with {input_shape[channel_axis]} input channels.",
                     stacklevel=2,
                 )
-            default_shape = (default_size, default_size, input_shape[-1])
+            default_shape = (
+                default_size,
+                default_size,
+                input_shape[channel_axis],
+            )
     else:
         if data_format == "channels_first":
             default_shape = (3, default_size, default_size)
+            channel_axis = 0
         else:
             default_shape = (default_size, default_size, 3)
+            channel_axis = -1
+
     if weights == "imagenet" and require_flatten:
-        if input_shape is not None:
-            if input_shape != default_shape:
-                raise ValueError(
-                    "When setting `include_top=True` "
-                    "and loading `imagenet` weights, "
-                    f"`input_shape` should be {default_shape}.  "
-                    f"Received: input_shape={input_shape}"
-                )
+        if input_shape is not None and input_shape != default_shape:
+            raise ValueError(
+                "When setting `include_top=True` "
+                "and loading `imagenet` weights, "
+                f"`input_shape` should be {default_shape}.  "
+                f"Received: input_shape={input_shape}"
+            )
         return default_shape
     if input_shape:
-        if data_format == "channels_first":
-            if input_shape is not None:
-                if len(input_shape) != 3:
-                    raise ValueError(
-                        "`input_shape` must be a tuple of three integers."
-                    )
-                if input_shape[0] != 3 and weights == "imagenet":
-                    raise ValueError(
-                        "The input must have 3 channels; Received "
-                        f"`input_shape={input_shape}`"
-                    )
-                if (
-                    input_shape[1] is not None and input_shape[1] < min_size
-                ) or (input_shape[2] is not None and input_shape[2] < min_size):
-                    raise ValueError(
-                        f"Input size must be at least {min_size}"
-                        f"x{min_size}; Received: "
-                        f"input_shape={input_shape}"
-                    )
-        else:
-            if input_shape is not None:
-                if len(input_shape) != 3:
-                    raise ValueError(
-                        "`input_shape` must be a tuple of three integers."
-                    )
-                if input_shape[-1] != 3 and weights == "imagenet":
-                    raise ValueError(
-                        "The input must have 3 channels; Received "
-                        f"`input_shape={input_shape}`"
-                    )
-                if (
-                    input_shape[0] is not None and input_shape[0] < min_size
-                ) or (input_shape[1] is not None and input_shape[1] < min_size):
-                    raise ValueError(
-                        "Input size must be at least "
-                        f"{min_size}x{min_size}; Received: "
-                        f"input_shape={input_shape}"
-                    )
+        _validate_input_shape_channels(
+            input_shape, min_size, weights, channel_axis, default_shape
+        )
     else:
         if require_flatten:
             input_shape = default_shape
@@ -463,3 +456,27 @@ def validate_activation(classifier_activation, weights):
             "pretrained weights, with `include_top=True`; Received: "
             f"classifier_activation={classifier_activation}"
         )
+
+
+def _validate_input_shape_channels(
+    input_shape, min_size, weights, axis, default_shape
+):
+    if input_shape is not None:
+        if len(input_shape) != 3:
+            raise ValueError("`input_shape` must be a tuple of three integers.")
+        if input_shape[axis] != 3 and weights == "imagenet":
+            raise ValueError(
+                "The input must have 3 channels; Received "
+                f"`input_shape={input_shape}`"
+            )
+        # height/width
+        axes = [i for i in range(3) if i != axis]
+        if (
+            input_shape[axes[0]] is not None and input_shape[axes[0]] < min_size
+        ) or (
+            input_shape[axes[1]] is not None and input_shape[axes[1]] < min_size
+        ):
+            raise ValueError(
+                f"Input size must be at least {min_size}x{min_size}; Received: "
+                f"input_shape={input_shape}"
+            )
