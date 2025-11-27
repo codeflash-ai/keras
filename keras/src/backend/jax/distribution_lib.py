@@ -7,6 +7,7 @@ from keras.src.backend.common import global_state
 from keras.src.random import seed_generator
 from keras.src.utils import jax_utils
 from keras.src.utils import rng_utils
+from functools import lru_cache
 
 
 def list_devices(device_type=None):
@@ -38,7 +39,7 @@ def get_device_count(device_type=None):
         int: The total number of JAX devices for the specified type.
     """
     device_type = device_type.lower() if device_type else None
-    return jax.device_count(device_type)
+    return _cached_device_count(device_type)
 
 
 def distribute_variable(value, layout):
@@ -260,3 +261,9 @@ def _to_backend_layout(tensor_layout):
     partition_spec = jax.sharding.PartitionSpec(*tensor_layout.axes)
     jax_mesh = tensor_layout.device_mesh.backend_mesh
     return jax.sharding.NamedSharding(jax_mesh, partition_spec)
+
+
+@lru_cache(maxsize=3)
+def _cached_device_count(device_type: str | None) -> int:
+    # Directly cache the jax.device_count calls for each device_type (None/cpu/gpu/tpu)
+    return jax.device_count(device_type)
