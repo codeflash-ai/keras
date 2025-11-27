@@ -63,6 +63,10 @@ class DictPyDataset(py_dataset_adapter.PyDataset):
         self.inputs = inputs
         self.batch_size = batch_size
 
+        # Cache the input lengths to avoid repeated dict accesses and len calls
+        self._x_len = len(self.inputs["x"]) if "x" in self.inputs else 0
+        self._y_len = len(self.inputs["y"]) if "y" in self.inputs else 0
+
     @property
     def num_batches(self):
         return math.ceil(len(self.inputs["x"]) / self.batch_size)
@@ -72,11 +76,11 @@ class DictPyDataset(py_dataset_adapter.PyDataset):
         low = idx * self.batch_size
         # Cap upper bound at array length; the last batch may be smaller
         # if the total number of items is not a multiple of batch size.
-        high = min(low + self.batch_size, len(self.inputs["x"]))
+        high = min(low + self.batch_size, self._x_len)
+        # Use local variables and direct slicing for performance
         batch_x = self.inputs["x"][low:high]
         batch_y = self.inputs["y"][low:high]
-        batch = {"x": batch_x, "y": batch_y}
-        return batch
+        return {"x": batch_x, "y": batch_y}
 
 
 class ExceptionPyDataset(py_dataset_adapter.PyDataset):
