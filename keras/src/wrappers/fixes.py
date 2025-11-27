@@ -1,3 +1,5 @@
+from sklearn.utils.multiclass import type_of_target as sk_type_of_target
+
 try:
     import sklearn
 except ImportError:
@@ -24,20 +26,11 @@ def _validate_data(estimator, *args, **kwargs):
 
 
 def type_of_target(y, input_name="", *, raise_unknown=False):
-    def _raise_or_return(target_type):
-        """Depending on the value of raise_unknown, either raise an error or
-        return 'unknown'.
-        """
-        if raise_unknown and target_type == "unknown":
-            input = input_name if input_name else "data"
-            raise ValueError(f"Unknown label type for {input}: {y!r}")
-        else:
-            return target_type
-
-    from sklearn.utils.multiclass import type_of_target as sk_type_of_target
-
     target_type = sk_type_of_target(y, input_name=input_name)
-    return _raise_or_return(target_type)
+    if raise_unknown and target_type == "unknown":
+        input = input_name if input_name else "data"
+        raise ValueError(f"Unknown label type for {input}: {y!r}")
+    return target_type
 
 
 def _routing_enabled():
