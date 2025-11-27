@@ -34,21 +34,35 @@ def unpack_x_y_sample_weight(data):
         The unpacked tuple, with `None`s for `y` and `sample_weight` if they are
         not provided.
     """
-    if isinstance(data, list):
-        data = tuple(data)
-    if not isinstance(data, tuple):
+    # Save an extra tuple copy for already-good tuple input
+    if isinstance(data, tuple):
+        l = len(data)
+        if l == 1:
+            return (data[0], None, None)
+        elif l == 2:
+            return (data[0], data[1], None)
+        elif l == 3:
+            return (data[0], data[1], data[2])
+        error_msg = (
+            "Data is expected to be in format `x`, `(x,)`, `(x, y)`, "
+            f"or `(x, y, sample_weight)`, found: {data}"
+        )
+        raise ValueError(error_msg)
+    elif isinstance(data, list):
+        l = len(data)
+        if l == 1:
+            return (data[0], None, None)
+        elif l == 2:
+            return (data[0], data[1], None)
+        elif l == 3:
+            return (data[0], data[1], data[2])
+        error_msg = (
+            "Data is expected to be in format `x`, `(x,)`, `(x, y)`, "
+            f"or `(x, y, sample_weight)`, found: {data}"
+        )
+        raise ValueError(error_msg)
+    else:
         return (data, None, None)
-    elif len(data) == 1:
-        return (data[0], None, None)
-    elif len(data) == 2:
-        return (data[0], data[1], None)
-    elif len(data) == 3:
-        return (data[0], data[1], data[2])
-    error_msg = (
-        "Data is expected to be in format `x`, `(x,)`, `(x, y)`, "
-        f"or `(x, y, sample_weight)`, found: {data}"
-    )
-    raise ValueError(error_msg)
 
 
 @keras_export("keras.utils.pack_x_y_sample_weight")

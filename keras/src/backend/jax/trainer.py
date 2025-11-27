@@ -201,7 +201,14 @@ class JAXTrainer(base_trainer.Trainer):
         if self._call_has_training_arg:
             kwargs["training"] = False
 
-        x, _, _ = data_adapter_utils.unpack_x_y_sample_weight(data)
+        # Fast path: extract x directly for common cases
+        if isinstance(data, (tuple, list)) and len(data) >= 1:
+            x = data[0]
+        elif isinstance(data, tuple) or isinstance(data, list):
+            x, _, _ = data_adapter_utils.unpack_x_y_sample_weight(data)
+        else:
+            x = data
+
         outputs, non_trainable_variables = self.stateless_call(
             trainable_variables, non_trainable_variables, x, **kwargs
         )
