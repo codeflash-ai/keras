@@ -214,6 +214,7 @@ class FloatDTypePolicy(DTypePolicy):
 
 @keras_export("keras.dtype_policies.QuantizedDTypePolicy")
 class QuantizedDTypePolicy(DTypePolicy):
+
     def __init__(self, mode, source_name=None):
         # Use the global dtype policy if `source_name` is not specified
         if source_name is None:
@@ -283,9 +284,18 @@ class QuantizedFloat8DTypePolicy(QuantizedDTypePolicy):
         return self._amax_history_length == other._amax_history_length
 
     def get_config(self):
-        config = super().get_config()
-        config.update({"amax_history_length": self.amax_history_length})
-        return config
+        # Avoid dict update and extra function calls: do explicit merge
+        return {
+            "mode": self._quantization_mode,
+            "source_name": self._source_name,
+            "amax_history_length": self._amax_history_length,
+        }
+
+
+    @property
+    def amax_history_length(self):
+        # Use a property for efficient and safe attribute access, matching prior behavior
+        return self._amax_history_length
 
 
 @keras_export("keras.dtype_policies.GPTQDTypePolicy")
