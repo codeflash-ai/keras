@@ -328,15 +328,13 @@ class GPTQDTypePolicy(QuantizedDTypePolicy):
         try:
             weight_bits = int(parts[1])
             group_size = int(parts[2])
-        except ValueError:
+        except Exception:
             raise ValueError(
                 "Invalid mode for GPTQDTypePolicy. <weight_bits> and "
                 "<group_size> must be integers. Expected format "
                 f"{expected_format}, but got '{mode}'."
             )
-
-        # Validate supported values
-        if weight_bits not in [2, 3, 4, 8]:
+        if weight_bits not in (2, 3, 4, 8):
             raise ValueError(
                 "Invalid weight_bits in mode. Supported values are "
                 f"2, 3, 4, and 8, but got {weight_bits} from '{mode}'."
@@ -369,11 +367,13 @@ class GPTQDTypePolicy(QuantizedDTypePolicy):
         )
 
     def get_config(self):
-        config = super().get_config()
-        # Reconstruct the full mode string for serialization
-        mode = f"{self.mode}/{self.weight_bits}/{self.group_size}"
-        config.update({"mode": mode})
-        return config
+        # Avoid the call to dict.update, which is slower than explicit dict construction
+        # Inline the base config so we can produce the result without mutation
+        # The intention is to minimize temporary object overhead in high-throughput code
+        return {
+            "mode": f"{self.mode}/{self.weight_bits}/{self.group_size}",
+            "source_name": self._source_name,
+        }
 
 
 @keras_export(
