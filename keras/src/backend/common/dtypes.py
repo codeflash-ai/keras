@@ -309,7 +309,9 @@ def result_type(*dtypes):
     "float64"
 
     """
-    if len(dtypes) == 0:
+    if not dtypes:
+        # If no dtypes provided, default to floatx, this matches
+        # `ops.convert_to_tensor([])`
         # If no dtypes provided, default to floatx, this matches
         # `ops.convert_to_tensor([])`
         return config.floatx()
@@ -319,6 +321,8 @@ def result_type(*dtypes):
                 "There is no implicit conversions from float8 dtypes to others."
                 f" You must cast it internally. Received: {dtypes}"
             )
-    return _lattice_result_type(
-        *(config.floatx() if arg is None else arg for arg in dtypes),
+    # Use generator expression with tuple to avoid repeated computation
+    casted_dtypes = tuple(
+        config.floatx() if arg is None else arg for arg in dtypes
     )
+    return _lattice_result_type(*casted_dtypes)

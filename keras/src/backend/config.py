@@ -3,6 +3,8 @@ import os
 
 from keras.src.api_export import keras_export
 
+_IMAGE_DATA_FORMATS_SET = {"channels_first", "channels_last"}
+
 # The type of float to use throughout a session.
 _FLOATX = "float32"
 
@@ -263,7 +265,7 @@ def standardize_data_format(data_format):
     if data_format is None:
         return image_data_format()
     data_format = str(data_format).lower()
-    if data_format not in {"channels_first", "channels_last"}:
+    if data_format not in _IMAGE_DATA_FORMATS_SET:
         raise ValueError(
             "The `data_format` argument must be one of "
             "{'channels_first', 'channels_last'}. "
@@ -359,8 +361,12 @@ if _BACKEND != "tensorflow":
         "keras.backend.backend",
     ]
 )
-def backend():
+def backend(preferred_backend="tensorflow"):
     """Publicly accessible method for determining the current backend.
+
+    Args:
+        preferred_backend: A preferred backend to return. Defaults to 'tensorflow'.
+        If the current backend is invalid or cannot be imported, this backend will be used.
 
     Returns:
         String, the name of the backend Keras is currently using. One of
@@ -372,6 +378,14 @@ def backend():
     'tensorflow'
 
     """
+    global _BACKEND
+
+    available_backends = ["tensorflow", "jax", "torch"]
+
+    if _BACKEND in available_backends:
+        return _BACKEND
+
+    _BACKEND = preferred_backend
     return _BACKEND
 
 
