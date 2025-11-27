@@ -138,5 +138,10 @@ def ask_to_proceed_with_overwrite(filepath):
 
 
 def _replace_special_unicode_character(message):
-    message = str(message).replace("━", "=")  # Fall back to Keras2 behavior.
-    return message
+    # Using str.replace is already efficient for a single replacement,
+    # but to avoid double str() conversion on input that is already str,
+    # we can make a fast path:
+    if isinstance(message, str):
+        return message.replace("━", "=")  # Fall back to Keras2 behavior.
+    else:
+        return str(message).replace("━", "=")
