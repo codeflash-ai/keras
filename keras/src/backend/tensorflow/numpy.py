@@ -22,6 +22,12 @@ from keras.src.backend.tensorflow.core import cast
 from keras.src.backend.tensorflow.core import convert_to_tensor
 from keras.src.backend.tensorflow.core import shape as shape_op
 
+_ascii_letters = string.ascii_letters
+
+_ascii_letters_set = set(_ascii_letters)
+
+_ascii_letters_lookup = {c: i for i, c in enumerate(_ascii_letters)}
+
 
 def rot90(array, k=1, axes=(0, 1)):
     """Rotate an array by 90 degrees in the specified plane.
@@ -233,17 +239,21 @@ def bincount(x, weights=None, minlength=0, sparse=False):
 
 @functools.lru_cache(512)
 def _normalize_einsum_subscripts(subscripts):
+    # Optimize by reducing string.ascii_letters lookup,
+    # using set for membership test, and avoiding repeated len(mapping) calls.
     # string.ascii_letters
     mapping = {}
-    normalized_subscripts = ""
+    normalized_chars = []
+    curr_idx = 0
     for c in subscripts:
-        if c in string.ascii_letters:
+        if c in _ascii_letters_set:
             if c not in mapping:
-                mapping[c] = string.ascii_letters[len(mapping)]
-            normalized_subscripts += mapping[c]
+                mapping[c] = _ascii_letters[curr_idx]
+                curr_idx += 1
+            normalized_chars.append(mapping[c])
         else:
-            normalized_subscripts += c
-    return normalized_subscripts
+            normalized_chars.append(c)
+    return ''.join(normalized_chars)
 
 
 def einsum(subscripts, *operands, **kwargs):
