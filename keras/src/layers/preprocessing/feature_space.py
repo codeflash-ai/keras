@@ -397,13 +397,17 @@ class FeatureSpace(Layer):
         self.crossing_dim = crossing_dim
         self.hashing_dim = hashing_dim
         self.num_discretization_bins = num_discretization_bins
-        self.features = {
-            name: self._standardize_feature(name, value)
-            for name, value in features.items()
-        }
+
+        # Use dict comprehension directly to minimize scope and local lookups,
+        # and avoid repeated .items() allocations.
+        features_items = features.items()
+        self.features = {name: self._standardize_feature(name, value)
+                         for name, value in features_items}
+
         self.crosses = []
         if crosses:
-            feature_set = set(features.keys())
+            feature_keys = features.keys()
+            feature_set = set(feature_keys)
             for cross in crosses:
                 if isinstance(cross, dict):
                     cross = serialization_lib.deserialize_keras_object(cross)
@@ -417,16 +421,20 @@ class FeatureSpace(Layer):
                             "(dimensionality of the crossing space) "
                             "should be specified as well."
                         )
-                    for key in cross:
-                        if key not in feature_set:
-                            raise ValueError(
-                                "All features referenced "
-                                "in the `crosses` argument "
-                                "should be present in the `features` dict. "
-                                f"Received unknown features: {cross}"
-                            )
+                    # Instead of iterating per key and searching the set,
+                    # filter the unknown keys in a single pass for early fail.
+                    unknown_keys = [key for key in cross if key not in feature_set]
+                    if unknown_keys:
+                        raise ValueError(
+                            "All features referenced "
+                            "in the `crosses` argument "
+                            "should be present in the `features` dict. "
+                            f"Received unknown features: {cross}"
+                        )
                     self.crosses.append(Cross(cross, crossing_dim=crossing_dim))
-        self.crosses_by_name = {cross.name: cross for cross in self.crosses}
+        # Use generator expression to avoid a temporary list in dict comprehension.
+        self.crosses_by_name = dict((cross.name, cross) for cross in self.crosses)
+
 
         if output_mode not in {"dict", "concat"}:
             raise ValueError(
@@ -436,17 +444,15 @@ class FeatureSpace(Layer):
             )
         self.output_mode = output_mode
 
-        self.inputs = {
-            name: self._feature_to_input(name, value)
-            for name, value in self.features.items()
-        }
-        self.preprocessors = {
-            name: value.preprocessor for name, value in self.features.items()
-        }
+        # Avoid repeated lookups into self.features.items().
+        features_items = self.features.items()
+        self.inputs = {name: self._feature_to_input(name, value)
+                       for name, value in features_items}
+        self.preprocessors = {name: value.preprocessor
+                              for name, value in features_items}
+
         self.encoded_features = None
-        self.crossers = {
-            cross.name: self._cross_to_crosser(cross) for cross in self.crosses
-        }
+        self.crossers = {cross.name: self._cross_to_crosser(cross) for cross in self.crosses}
         self.one_hot_encoders = {}
         self._is_adapted = False
         self.concat = None
