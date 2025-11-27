@@ -175,7 +175,7 @@ class DTypePolicy:
         return x
 
     def get_config(self):
-        return {"name": self.name}
+        return {"name": self._name}
 
     @classmethod
     def from_config(cls, config):
