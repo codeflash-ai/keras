@@ -17,6 +17,12 @@ from keras.src.layers.input_spec import InputSpec
 from keras.src.layers.layer import Layer
 from keras.src.quantizers.quantizers import dequantize_with_sz_map
 
+_PATTERN_SIMPLE = re.compile(r"([a-zA-Z]+),([a-zA-Z]+)->([a-zA-Z]+)")
+
+_PATTERN_LEFT_ELIDED = re.compile(r"0([a-zA-Z]+),([a-zA-Z]+)->0([a-zA-Z]+)")
+
+_PATTERN_RIGHT_ELIDED = re.compile(r"([a-zA-Z]{2,})0,([a-zA-Z]+)->([a-zA-Z]+)0")
+
 
 @keras_export("keras.layers.EinsumDense")
 class EinsumDense(Layer):
@@ -1196,30 +1202,23 @@ def _analyze_einsum_string(equation, bias_axes, input_shape, output_shape):
         ValueError: If the einsum `equation` is not in a supported format.
     """
 
-    dot_replaced_string = re.sub(r"\.\.\.", "0", equation)
+    # Replace "..." with "0" for easier matching
+    dot_replaced_string = equation.replace("...", "0")
 
-    # This is the case where no ellipses are present in the string.
-    split_string = re.match(
-        "([a-zA-Z]+),([a-zA-Z]+)->([a-zA-Z]+)", dot_replaced_string
-    )
+    # Match using precompiled regex patterns
+    split_string = _PATTERN_SIMPLE.match(dot_replaced_string)
     if split_string:
         return _analyze_split_string(
             split_string, bias_axes, input_shape, output_shape
         )
 
-    # This is the case where ellipses are present on the left.
-    split_string = re.match(
-        "0([a-zA-Z]+),([a-zA-Z]+)->0([a-zA-Z]+)", dot_replaced_string
-    )
+    split_string = _PATTERN_LEFT_ELIDED.match(dot_replaced_string)
     if split_string:
         return _analyze_split_string(
             split_string, bias_axes, input_shape, output_shape, left_elided=True
         )
 
-    # This is the case where ellipses are present on the right.
-    split_string = re.match(
-        "([a-zA-Z]{2,})0,([a-zA-Z]+)->([a-zA-Z]+)0", dot_replaced_string
-    )
+    split_string = _PATTERN_RIGHT_ELIDED.match(dot_replaced_string)
     if split_string:
         return _analyze_split_string(
             split_string, bias_axes, input_shape, output_shape
@@ -1310,8 +1309,11 @@ def _analyze_split_string(
                     f"is {output_shape[output_dim_map[dim]]}."
                 )
 
+    input_spec_set = set(input_spec)
+    weight_spec_set = set(weight_spec)
+
     for dim in output_spec:
-        if dim not in input_spec and dim not in weight_spec:
+        if dim not in input_spec_set and dim not in weight_spec_set:
             raise ValueError(
                 f"Dimension '{dim}' was specified in the output "
                 f"'{output_spec}' but has no corresponding dim in the input "
