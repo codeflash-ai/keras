@@ -123,7 +123,7 @@ def distribute_data_input(per_process_batch, layout, batch_dim_name):
     # Avoid circular imports.
     from keras.src.distribution import TensorLayout
 
-    if isinstance(layout, TensorLayout):
+    if type(layout) is TensorLayout:
         layout = layout.backend_layout
 
     return jax.make_array_from_process_local_data(layout, per_process_batch)
