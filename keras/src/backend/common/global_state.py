@@ -13,12 +13,16 @@ def set_global_attribute(name, value):
 
 
 def get_global_attribute(name, default=None, set_to_default=False):
-    attr = getattr(GLOBAL_STATE_TRACKER, name, None)
-    if attr is None and default is not None:
-        attr = default
+    # Use __dict__ to avoid the slower getattr when attribute may frequently not exist
+    d = GLOBAL_STATE_TRACKER.__dict__
+    if name in d:
+        return d[name]
+    elif default is not None:
         if set_to_default:
-            set_global_attribute(name, attr)
-    return attr
+            set_global_attribute(name, default)
+        return default
+    else:
+        return None
 
 
 @keras_export(["keras.utils.clear_session", "keras.backend.clear_session"])
