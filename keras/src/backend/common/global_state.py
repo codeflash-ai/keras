@@ -13,7 +13,8 @@ def set_global_attribute(name, value):
 
 
 def get_global_attribute(name, default=None, set_to_default=False):
-    attr = getattr(GLOBAL_STATE_TRACKER, name, None)
+    dct = GLOBAL_STATE_TRACKER.__dict__
+    attr = dct[name] if name in dct else None
     if attr is None and default is not None:
         attr = default
         if set_to_default:
