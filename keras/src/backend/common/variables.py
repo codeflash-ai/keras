@@ -573,19 +573,33 @@ def initialize_all_variables():
 def standardize_dtype(dtype):
     if dtype is None:
         return config.floatx()
-    dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
-    if hasattr(dtype, "name"):
-        dtype = dtype.name
-    elif hasattr(dtype, "__name__"):
-        dtype = dtype.__name__
-    elif hasattr(dtype, "__str__") and (
-        "torch" in str(dtype) or "jax.numpy" in str(dtype)
-    ):
-        dtype = str(dtype).split(".")[-1]
-
-    if dtype not in dtypes.ALLOWED_DTYPES:
-        raise ValueError(f"Invalid dtype: {dtype}")
-    return dtype
+    # Fast-path: most common string dtypes
+    if isinstance(dtype, str):
+        # If already allowed, avoid dictionary lookup
+        if dtype in dtypes.ALLOWED_DTYPES:
+            return dtype
+    # Dictionary/map lookup
+    dtype_mapped = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
+    # If mapped and now string, fast path again
+    if isinstance(dtype_mapped, str):
+        dtype_str = dtype_mapped
+    else:
+        # Attribute extraction -- try blocks are fastest for common-case attribute access
+        try:
+            dtype_str = dtype_mapped.name
+        except AttributeError:
+            try:
+                dtype_str = dtype_mapped.__name__
+            except AttributeError:
+                # str conversion only once, used for all checks
+                str_dtype = str(dtype_mapped)
+                if "torch" in str_dtype or "jax.numpy" in str_dtype:
+                    dtype_str = str_dtype.split(".")[-1]
+                else:
+                    dtype_str = str_dtype
+    if dtype_str not in dtypes.ALLOWED_DTYPES:
+        raise ValueError(f"Invalid dtype: {dtype_str}")
+    return dtype_str
 
 
 def standardize_shape(shape):
