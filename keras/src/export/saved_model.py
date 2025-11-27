@@ -670,24 +670,34 @@ def _list_variables_used_by_fns(fns):
     non_trainable_variables = []
     trainable_variables_ids = set()
     non_trainable_variables_ids = set()
+
+    # Pre-define local vars to avoid attribute lookup in the loops
+    trainable_append = trainable_variables.append
+    non_trainable_append = non_trainable_variables.append
+    trainable_add = trainable_variables_ids.add
+    non_trainable_add = non_trainable_variables_ids.add
+
     for fn in fns:
         if hasattr(fn, "concrete_functions"):
             concrete_functions = fn.concrete_functions
         elif hasattr(fn, "get_concrete_function"):
-            concrete_functions = [fn.get_concrete_function()]
+            # Avoid creating list in loop when not needed
+            concrete_functions = (fn.get_concrete_function(),)
         else:
-            concrete_functions = [fn]
+            concrete_functions = (fn,)
         for concrete_fn in concrete_functions:
             for v in concrete_fn.trainable_variables:
-                if id(v) not in trainable_variables_ids:
-                    trainable_variables.append(v)
-                    trainable_variables_ids.add(id(v))
+                vid = id(v)
+                if vid not in trainable_variables_ids:
+                    trainable_append(v)
+                    trainable_add(vid)
 
             for v in concrete_fn.variables:
+                vid = id(v)
                 if (
-                    id(v) not in trainable_variables_ids
-                    and id(v) not in non_trainable_variables_ids
+                    vid not in trainable_variables_ids
+                    and vid not in non_trainable_variables_ids
                 ):
-                    non_trainable_variables.append(v)
-                    non_trainable_variables_ids.add(id(v))
+                    non_trainable_append(v)
+                    non_trainable_add(vid)
     return trainable_variables, non_trainable_variables
