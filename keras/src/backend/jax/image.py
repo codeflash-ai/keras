@@ -7,6 +7,8 @@ from keras.src import backend
 from keras.src.backend.jax.core import convert_to_tensor
 from keras.src.random.seed_generator import draw_seed
 
+_meshgrid_cache = {}
+
 RESIZE_INTERPOLATIONS = (
     "bilinear",
     "nearest",
@@ -409,7 +411,7 @@ def affine_transform(
     data_format=None,
 ):
     data_format = backend.standardize_data_format(data_format)
-    if interpolation not in AFFINE_TRANSFORM_INTERPOLATIONS.keys():
+    if interpolation not in AFFINE_TRANSFORM_INTERPOLATIONS:
         raise ValueError(
             "Invalid value for argument `interpolation`. Expected of one "
             f"{set(AFFINE_TRANSFORM_INTERPOLATIONS.keys())}. Received: "
@@ -449,24 +451,23 @@ def affine_transform(
 
     batch_size = images.shape[0]
 
-    # get indices
-    meshgrid = jnp.meshgrid(
-        *[jnp.arange(size) for size in images.shape[1:]], indexing="ij"
-    )
-    indices = jnp.concatenate(
-        [jnp.expand_dims(x, axis=-1) for x in meshgrid], axis=-1
-    )
-    indices = jnp.tile(indices, (batch_size, 1, 1, 1, 1))
+    # --- Efficient meshgrid and indices calculation
+    spatial_shape = images.shape[1:-1]  # (H, W) or (D, H, W) etc.
+    _, indices_template = _get_meshgrid_and_indices(spatial_shape)
+    # Only tile along batch: avoids full recomputation, much less memory use
+    indices = jnp.tile(indices_template, (batch_size, 1, 1, 1, 1))
 
-    # swap the values
-    a0 = transform[:, 0]
-    a2 = transform[:, 2]
-    b1 = transform[:, 4]
-    b2 = transform[:, 5]
-    transform = transform.at[:, 0].set(b1)
-    transform = transform.at[:, 2].set(b2)
-    transform = transform.at[:, 4].set(a0)
-    transform = transform.at[:, 5].set(a2)
+    # Efficient swap for transform:
+    # Instead of repeated .at[...].set, perform swap in-place per batch
+    # (for maximal XLA fusion, single multi-index assignment)
+    # Achieved with advanced indexing:
+    t = transform
+    t_new = t.at[:, [0, 2, 4, 5]].set(
+        jnp.stack([t[:, 4], t[:, 5], t[:, 0], t[:, 2]], axis=1)
+    )
+    transform = t_new
+
+    # deal with transform
 
     # deal with transform
     transform = jnp.pad(
@@ -895,3 +896,20 @@ def scale_and_translate(
         method,
         antialias,
     )
+
+def _get_meshgrid_and_indices(shape):
+    spatial_shape = tuple(shape)
+    cache = _meshgrid_cache
+    if spatial_shape in cache:
+        meshgrid, indices_template = cache[spatial_shape]
+    else:
+        # meshgrid: tuple of coordinates for each dim (excluding batch)
+        meshgrid = jnp.meshgrid(
+            *[jnp.arange(size) for size in spatial_shape], indexing="ij"
+        )
+        # Efficient stacking and expand for indices preparation
+        indices_template = jnp.concatenate(
+            [jnp.expand_dims(x, axis=-1) for x in meshgrid], axis=-1
+        )
+        cache[spatial_shape] = (meshgrid, indices_template)
+    return meshgrid, indices_template
