@@ -574,6 +574,11 @@ def standardize_dtype(dtype):
     if dtype is None:
         return config.floatx()
     dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
+    # Fast-path check: if already a built-in string type, avoid further introspection
+    if isinstance(dtype, str):
+        if dtype not in dtypes.ALLOWED_DTYPES:
+            raise ValueError(f"Invalid dtype: {dtype}")
+        return dtype
     if hasattr(dtype, "name"):
         dtype = dtype.name
     elif hasattr(dtype, "__name__"):
