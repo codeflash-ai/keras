@@ -195,30 +195,47 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         if isinstance(x, Variable):
             x = x.value
         device = get_device()
-        if x.device != device:
+        # Only call x.to(device) if needed
+        orig_device = x.device
+        if orig_device != device:
+            # Avoid repeated to() calls
             if x.is_meta:
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
         if dtype is not None:
-            x = x.to(to_torch_dtype(dtype))
+            target_dtype = to_torch_dtype(dtype)
+            if x.dtype != target_dtype:
+                x = x.to(target_dtype)
         return x
+
+    device = get_device()
+    # Scalar fast-path
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
 
-    # Convert to np in case of any array-like that is not list or tuple.
-    if not isinstance(x, (list, tuple)):
+    # Handle tuple/list (possibly of tensors or mix)
+    if isinstance(x, (list, tuple)):
+        if len(x) > 0 and all(is_tensor(x1) for x1 in x):
+            # If all elements are tensors, use torch.stack for efficiency
+            want_tensors = [convert_to_tensor(x1) for x1 in x]
+            return torch.stack(want_tensors)
+        elif len(x) > 0 and any(is_tensor(x1) for x1 in x):
+            # Mixed types; fall back to recursive conversion, as in original
+            return torch.stack([convert_to_tensor(x1) for x1 in x])
+
+    # Only convert to np.ndarray if needed
+    if not isinstance(x, np.ndarray):
         x = np.array(x)
-    elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
+
+    dtype_for_np = dtype
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
@@ -226,14 +243,17 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         if standardize_dtype(x.dtype) == "bfloat16":
             # Torch backend does not support converting bfloat16 ndarray.
             x = x.astype(np.float32)
-            dtype = "bfloat16"
-        dtype = dtype or x.dtype
-    if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
-    dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+            dtype_for_np = "bfloat16"
+        dtype_for_np = dtype_for_np or x.dtype
+
+    if dtype_for_np is None:
+        # Need to flatten inputs to infer result type
+        flat_dtypes = [
+            getattr(item, "dtype", type(item)) for item in tree.flatten(x)
+        ]
+        dtype_for_np = result_type(*flat_dtypes)
+    torch_dtype = to_torch_dtype(dtype_for_np)
+    return torch.as_tensor(x, dtype=torch_dtype, device=device)
 
 
 def convert_to_numpy(x):
