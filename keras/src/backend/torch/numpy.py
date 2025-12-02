@@ -1750,9 +1750,9 @@ def where(condition, x1=None, x2=None):
 
 
 def divide(x1, x2):
-    if not isinstance(x1, (int, float)):
+    if not (isinstance(x1, torch.Tensor) or isinstance(x1, (int, float))):
         x1 = convert_to_tensor(x1)
-    if not isinstance(x2, (int, float)):
+    if not (isinstance(x2, torch.Tensor) or isinstance(x2, (int, float))):
         x2 = convert_to_tensor(x2)
     return torch.divide(x1, x2)
 
