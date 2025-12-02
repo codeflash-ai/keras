@@ -1758,9 +1758,10 @@ def divide(x1, x2):
 
 
 def divide_no_nan(x1, x2):
-    if not isinstance(x1, (int, float)):
+    # Convert only if not torch tensors
+    if not isinstance(x1, (int, float)) and not is_tensor(x1):
         x1 = convert_to_tensor(x1)
-    if not isinstance(x2, (int, float)):
+    if not isinstance(x2, (int, float)) and not is_tensor(x2):
         x2 = convert_to_tensor(x2)
     return torch.where(x2 == 0, 0, torch.divide(x1, x2))
 
