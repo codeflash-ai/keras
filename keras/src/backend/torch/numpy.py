@@ -1426,7 +1426,12 @@ def unravel_index(indices, shape):
 
 def real(x):
     if not isinstance(x, torch.Tensor):
-        x = torch.from_numpy(x)  # needed for complex type conversion
+        # Avoid repeated isinstance checks inside from_numpy (which handles ndarrays only)
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x)
+        else:
+            # Let torch.real handle type errors just like before
+            return torch.real(x)
     return torch.real(x)
 
 
