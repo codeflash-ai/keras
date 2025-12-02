@@ -617,7 +617,7 @@ def concatenate(xs, axis=0):
 def conjugate(x):
     if not isinstance(x, torch.Tensor):
         x = torch.from_numpy(x)  # needed for complex type conversion
-    return torch.conj(x).resolve_conj()
+    return torch.conj(x)
 
 
 def conj(x):
