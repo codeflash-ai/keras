@@ -185,6 +185,13 @@ class Variable(KerasVariable):
         except Exception:
             return False
 
+    def __init__(self, value):
+        self.value = value
+        self.device = (
+            value.device if hasattr(value, "device") else DEFAULT_DEVICE
+        )
+        self.is_meta = getattr(value, "is_meta", False)
+
 
 def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
     if sparse:
@@ -212,13 +219,19 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             return torch.as_tensor(
                 x, dtype=to_torch_dtype(floatx()), device=get_device()
             )
-
-    # Convert to np in case of any array-like that is not list or tuple.
-    if not isinstance(x, (list, tuple)):
+    # Only convert to np.array if not already a ndarray/list/tuple
+    if not isinstance(x, (list, tuple, np.ndarray)):
         x = np.array(x)
-    elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
+
+    # Optimize torch.stack(list-of-tensors) special case
+    if isinstance(x, (list, tuple)) and len(x) > 0:
+        found_tensor = False
+        for x1 in x:
+            if isinstance(x1, torch.Tensor):
+                found_tensor = True
+                break
+        if found_tensor:
+            return torch.stack((convert_to_tensor(x1) for x1 in x))
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
@@ -229,8 +242,14 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
+        if isinstance(x, np.ndarray):
+            tree_flat = x.flat
+        elif isinstance(x, (list, tuple)):
+            tree_flat = x
+        else:
+            tree_flat = tree.flatten(x)
         dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
+            *(getattr(item, "dtype", type(item)) for item in tree_flat)
         )
     dtype = to_torch_dtype(dtype)
     return torch.as_tensor(x, dtype=dtype, device=get_device())
