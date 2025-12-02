@@ -994,30 +994,32 @@ def linspace(
             f"Received axis={axis}"
         )
     if dtype is None:
-        dtypes_to_resolve = [
-            getattr(start, "dtype", type(start)),
-            getattr(stop, "dtype", type(stop)),
-            float,
-        ]
-        dtype = dtypes.result_type(*dtypes_to_resolve)
-    dtype = to_torch_dtype(dtype)
+        start_dtype = getattr(start, "dtype", type(start))
+        stop_dtype = getattr(stop, "dtype", type(stop))
+        dtype = dtypes.result_type(start_dtype, stop_dtype, float)
+    tdtype = to_torch_dtype(dtype)
+    device = get_device()
 
-    step = convert_to_tensor(torch.nan)
+    # Only compute convert_to_tensor for torch.nan if required (step seldom used)
     if endpoint:
         if num > 1:
             step = (stop - start) / (num - 1)
+        else:
+            # When num <= 1, step is conventionally NaN
+            step = float('nan')
     else:
         if num > 0:
             step = (stop - start) / num
+        else:
+            step = float('nan')
         if num > 1:
             stop = stop - ((stop - start) / num)
     if hasattr(start, "__len__") and hasattr(stop, "__len__"):
-        start = convert_to_tensor(start, dtype=dtype)
-        stop = convert_to_tensor(stop, dtype=dtype)
-        steps = torch.arange(num, dtype=dtype, device=get_device()) / (num - 1)
-
-        # reshape `steps` to allow for broadcasting
-        for i in range(start.ndim):
+        # Only do expensive tensor conversion in the slow path
+        start = convert_to_tensor(start, dtype=tdtype)
+        stop = convert_to_tensor(stop, dtype=tdtype)
+        steps = torch.arange(num, dtype=tdtype, device=device) / (num - 1)
+        for _ in range(start.ndim):
             steps = steps.unsqueeze(-1)
 
         # increments from `start` to `stop` in each dimension
@@ -1027,11 +1029,11 @@ def linspace(
             start=start,
             end=stop,
             steps=num,
-            dtype=dtype,
-            device=get_device(),
+            dtype=tdtype,
+            device=device,
         )
-    if retstep is True:
-        return (linspace, step)
+    if retstep:
+        return (linspace, convert_to_tensor(step) if not isinstance(step, float) or step != step else step)
     return linspace
 
 
