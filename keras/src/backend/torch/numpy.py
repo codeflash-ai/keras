@@ -949,8 +949,9 @@ def isnan(x):
 
 
 def isneginf(x):
-    x = convert_to_tensor(x)
-    return torch.isneginf(x)
+    # Avoid unnecessary repeated device/dtype work if x already a Tensor
+    t = x if isinstance(x, torch.Tensor) else convert_to_tensor(x)
+    return torch.isneginf(t)
 
 
 def isposinf(x):
