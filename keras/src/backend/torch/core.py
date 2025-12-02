@@ -92,7 +92,9 @@ def _parse_device_input(device_name):
 
 
 def to_torch_dtype(dtype):
-    standardized_dtype = TORCH_DTYPES.get(standardize_dtype(dtype), None)
+    dtype_str = standardize_dtype(dtype)
+    dtypes_dict = TORCH_DTYPES  # Local reference for faster lookup
+    standardized_dtype = dtypes_dict.get(dtype_str, None)
     if standardized_dtype is None:
         raise ValueError(f"Unsupported dtype for PyTorch: {dtype}")
     return standardized_dtype
@@ -196,7 +198,7 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             x = x.value
         device = get_device()
         if x.device != device:
-            if x.is_meta:
+            if getattr(x, "is_meta", False):
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
@@ -214,6 +216,10 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             )
 
     # Convert to np in case of any array-like that is not list or tuple.
+
+    device = get_device()
+
+    # Convert to np array if not list/tuple, else process
     if not isinstance(x, (list, tuple)):
         x = np.array(x)
     elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
@@ -229,11 +235,13 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
+        # Use tuple/list flattening only once to reduce repeated work
+        flat_x = tree.flatten(x)
         dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
+            *[getattr(item, "dtype", type(item)) for item in flat_x]
         )
     dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+    return torch.as_tensor(x, dtype=dtype, device=device)
 
 
 def convert_to_numpy(x):
