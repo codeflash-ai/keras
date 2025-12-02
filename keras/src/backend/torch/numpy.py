@@ -623,7 +623,7 @@ def conjugate(x):
 def conj(x):
     if not isinstance(x, torch.Tensor):
         x = torch.from_numpy(x)  # needed for complex type conversion
-    return torch.conj(x).resolve_conj()
+    return torch.conj_physical(x)
 
 
 def copy(x):
