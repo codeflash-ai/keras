@@ -412,9 +412,13 @@ def array(x, dtype=None):
 
 
 def view(x, dtype=None):
-    dtype = to_torch_dtype(dtype)
-    x = convert_to_tensor(x)
-    return x.view(dtype=dtype)
+    torch_dtype = to_torch_dtype(dtype)
+    # Short circuit: skip redundant conversion if already tensor
+    is_torch_tensor = isinstance(x, torch.Tensor)
+    tensor = x if is_torch_tensor else convert_to_tensor(x)
+    if tensor.dtype == torch_dtype:
+        return tensor
+    return tensor.view(dtype=torch_dtype)
 
 
 def average(x, axis=None, weights=None):
