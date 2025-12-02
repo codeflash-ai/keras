@@ -203,14 +203,17 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         if dtype is not None:
             x = x.to(to_torch_dtype(dtype))
         return x
+
+    # dtype dispatch on scalars
+    device = get_device()
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
 
     # Convert to np in case of any array-like that is not list or tuple.
@@ -220,20 +223,47 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         # Handle list or tuple of torch tensors
         return torch.stack([convert_to_tensor(x1) for x1 in x])
     if isinstance(x, np.ndarray):
-        if x.dtype == np.uint32:
+        arr = x  # alias for readability
+        if arr.dtype == np.uint32:
             # Torch backend does not support uint32.
-            x = x.astype(np.int64)
-        if standardize_dtype(x.dtype) == "bfloat16":
+            arr = arr.astype(np.int64)
+        if standardize_dtype(arr.dtype) == "bfloat16":
             # Torch backend does not support converting bfloat16 ndarray.
-            x = x.astype(np.float32)
+            arr = arr.astype(np.float32)
             dtype = "bfloat16"
-        dtype = dtype or x.dtype
+        dtype = dtype or arr.dtype
+        # For 1D or flat array, infer dtype directly and avoid flatten/result_type
+        if dtype is None and arr.ndim == 1:
+            # hot path for flat arrays, common case
+            dtype = arr.dtype
+    else:
+        arr = x
+        # Fast path: if list/tuple is all ints, floats, or bools of uniform type
+        if dtype is None and len(arr) > 0:
+            first_type = type(arr[0])
+            if all(isinstance(el, first_type) for el in arr):
+                if issubclass(first_type, (int, float, bool)):
+                    # string and bytes intentionally not supported here for torch
+                    if first_type is int:
+                        dtype = "int32"
+                    elif first_type is float:
+                        dtype = floatx()
+                    elif first_type is bool:
+                        dtype = "bool"
+        # If you couldn't deduce dtypes with above, fallback to slow flatten/result_type path
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
+        # This is still a hot spot: optimize tree.flatten usage when x is 1D
+        # but for now, only skip flatten if array, otherwise required
+        if isinstance(arr, np.ndarray) and arr.ndim == 1:
+            items = [arr.dtype]
+        else:
+            items = [
+                getattr(item, "dtype", type(item)) for item in tree.flatten(arr)
+            ]
+        dtype = result_type(*items)
+
     dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+    return torch.as_tensor(arr, dtype=dtype, device=device)
 
 
 def convert_to_numpy(x):
