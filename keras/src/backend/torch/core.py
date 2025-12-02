@@ -17,6 +17,7 @@ from keras.src.backend.common.stateless_scope import StatelessScope
 from keras.src.backend.common.stateless_scope import get_stateless_scope
 from keras.src.backend.common.stateless_scope import in_stateless_scope
 from keras.src.backend.common.symbolic_scope import SymbolicScope
+from keras.src.backend.common.variables import Variable
 from keras.src.backend.config import floatx
 
 SUPPORTS_SPARSE_TENSORS = False
@@ -191,12 +192,26 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with torch backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with torch backend")
-    if isinstance(x, Variable) or is_tensor(x):
-        if isinstance(x, Variable):
-            x = x.value
+
+    # Fast-path: torch.Tensor/Variable
+    Variable = None
+    if "keras.src.backend.common.variables" in globals():
+        Variable = globals()["keras.src.backend.common.variables"].Variable
+    else:
+        try:
+            from keras.src.backend.common.variables import Variable
+        except ImportError:
+            Variable = None
+
+    if Variable is not None and isinstance(x, Variable):
+        x = x.value
+        # continue to torch.Tensor handling
+
+    if is_tensor(x):
         device = get_device()
-        if x.device != device:
-            if x.is_meta:
+        x_device = x.device if hasattr(x, "device") else None
+        if x_device != device:
+            if getattr(x, "is_meta", False):
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
@@ -205,20 +220,33 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         return x
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            dtype_ = torch.bool
+            device = get_device()
+            return torch.as_tensor(x, dtype=dtype_, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            dtype_ = torch.int32
+            device = get_device()
+            return torch.as_tensor(x, dtype=dtype_, device=device)
         elif isinstance(x, float):
-            return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
-            )
+            dtype_ = to_torch_dtype(floatx())
+            device = get_device()
+            return torch.as_tensor(x, dtype=dtype_, device=device)
 
-    # Convert to np in case of any array-like that is not list or tuple.
-    if not isinstance(x, (list, tuple)):
-        x = np.array(x)
-    elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
+    # At this stage, x may be:
+    # - a list/tuple of Tensors, or
+    # - arraylike (including numpy)
+    # Only stack if a tensor is present in a nonzero-length sequence
+    if isinstance(x, (list, tuple)):
+        if len(x) > 0:
+            maybe_tensor = next((x1 for x1 in x if is_tensor(x1)), None)
+            if maybe_tensor is not None:
+                return torch.stack([convert_to_tensor(x1) for x1 in x])
+    else:
+        # If not list/tuple, to numpy array for consistent dtype logic
+        if not isinstance(x, np.ndarray):
+            x = np.array(x)
+
+    # At this point x is either np.ndarray or list/tuple (no tensors in sequence)
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
@@ -227,13 +255,21 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             # Torch backend does not support converting bfloat16 ndarray.
             x = x.astype(np.float32)
             dtype = "bfloat16"
-        dtype = dtype or x.dtype
+        if dtype is None:
+            dtype = x.dtype
+
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
-    dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+        # tree.flatten is called only when necessary, avoids unnecessary calls
+        flat = tree.flatten(x)
+        flat_dtypes = []
+        for item in flat:
+            dt = getattr(item, "dtype", type(item))
+            flat_dtypes.append(dt)
+        dtype = result_type(*flat_dtypes)
+
+    torch_dtype = to_torch_dtype(dtype)
+    device = get_device()
+    return torch.as_tensor(x, dtype=torch_dtype, device=device)
 
 
 def convert_to_numpy(x):
