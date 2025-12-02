@@ -1699,6 +1699,8 @@ def trunc(x):
 
 
 def vdot(x1, x2):
+    # Cache device and compute dtype lookup to minimize internal calls
+    device = get_device()
     x1 = convert_to_tensor(x1)
     x2 = convert_to_tensor(x2)
     result_dtype = dtypes.result_type(x1.dtype, x2.dtype)
@@ -1706,7 +1708,7 @@ def vdot(x1, x2):
     compute_dtype = dtypes.result_type(result_dtype, float)
 
     # TODO: torch.vdot doesn't support float16 with cpu
-    if get_device() == "cpu" and compute_dtype == "float16":
+    if device == "cpu" and compute_dtype == "float16":
         compute_dtype = "float32"
 
     x1 = cast(x1, compute_dtype)

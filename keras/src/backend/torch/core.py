@@ -1,6 +1,7 @@
 import builtins
 import contextlib
 import functools
+from functools import lru_cache
 
 import ml_dtypes
 import numpy as np
@@ -18,6 +19,8 @@ from keras.src.backend.common.stateless_scope import get_stateless_scope
 from keras.src.backend.common.stateless_scope import in_stateless_scope
 from keras.src.backend.common.symbolic_scope import SymbolicScope
 from keras.src.backend.config import floatx
+
+_cached_device = None
 
 SUPPORTS_SPARSE_TENSORS = False
 SUPPORTS_RAGGED_TENSORS = False
@@ -68,10 +71,16 @@ def device_scope(device_name):
 
 
 def get_device():
+    global _cached_device
     device = global_state.get_global_attribute("torch_device", None)
     if device is None:
-        return DEFAULT_DEVICE
-    return device
+        if _cached_device is None:
+            _cached_device = DEFAULT_DEVICE
+        return _cached_device
+    # If global state changed, update cache
+    if device != _cached_device:
+        _cached_device = device
+    return _cached_device
 
 
 def _parse_device_input(device_name):
@@ -191,34 +200,55 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with torch backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with torch backend")
+    device = get_device()
+    # Fast path: Already tensor or Variable
     if isinstance(x, Variable) or is_tensor(x):
         if isinstance(x, Variable):
             x = x.value
-        device = get_device()
         if x.device != device:
             if x.is_meta:
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
         if dtype is not None:
-            x = x.to(to_torch_dtype(dtype))
+            tdtype = to_torch_dtype(dtype)
+            if x.dtype != tdtype:
+                x = x.to(tdtype)
         return x
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
+
+    # If x is not list/tuple, convert to np.array
 
     # Convert to np in case of any array-like that is not list or tuple.
     if not isinstance(x, (list, tuple)):
         x = np.array(x)
-    elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
+    else:
+        # If list/tuple where all are torch tensors, stack is most efficient
+        if len(x) > 0 and all(isinstance(x1, torch.Tensor) for x1 in x):
+            # torch.stack expects tensors to be same shape
+            if dtype is None:
+                # If no dtype provided, torch.stack will infer it
+                return torch.stack(x).to(device)
+            else:
+                tdtype = to_torch_dtype(dtype)
+                return torch.stack(
+                    [x1.to(tdtype) if x1.dtype != tdtype else x1 for x1 in x]
+                ).to(device)
+        elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
+            # If mixed tensor/non-tensor, fall back to existing recursive convert
+            return torch.stack(
+                [convert_to_tensor(x1, dtype=dtype) for x1 in x]
+            ).to(device)
+
+    # Numpy array conversions
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
@@ -229,11 +259,13 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
+        # Use generator expression instead of building list to avoid overhead
+        flat_iter = (
+            getattr(item, "dtype", type(item)) for item in tree.flatten(x)
         )
-    dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+        dtype = _cached_result_type(*flat_iter)
+    tdtype = to_torch_dtype(dtype)
+    return torch.as_tensor(x, dtype=tdtype, device=device)
 
 
 def convert_to_numpy(x):
@@ -275,14 +307,14 @@ def shape(x):
 
 
 def cast(x, dtype):
-    dtype = to_torch_dtype(dtype)
+    tdtype = to_torch_dtype(dtype)
     if isinstance(x, Variable):
         x = x.value
     if is_tensor(x):
-        if x.dtype == dtype:
+        if x.dtype == tdtype:
             return x
         else:
-            return x.to(dtype)
+            return x.to(tdtype)
     return convert_to_tensor(x, dtype)
 
 
@@ -676,6 +708,11 @@ def remat(f):
         return torch.utils.checkpoint.checkpoint(f, *args, use_reentrant=False)
 
     return wrapped
+
+
+@lru_cache(maxsize=128)
+def _cached_result_type(*dtypes):
+    return result_type(*dtypes)
 
 
 class custom_gradient:
