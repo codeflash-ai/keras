@@ -204,13 +204,14 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             x = x.to(to_torch_dtype(dtype))
         return x
     if dtype is None:
+        device = get_device()
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
 
     # Convert to np in case of any array-like that is not list or tuple.
@@ -229,9 +230,9 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
+        # Optimize: avoid expensive tree.flatten & getattr
+        dt_list = _fast_result_type_from_flat_structure(x)
+        dtype = result_type(*dt_list)
     dtype = to_torch_dtype(dtype)
     return torch.as_tensor(x, dtype=dtype, device=get_device())
 
@@ -676,6 +677,31 @@ def remat(f):
         return torch.utils.checkpoint.checkpoint(f, *args, use_reentrant=False)
 
     return wrapped
+
+
+def _fast_result_type_from_flat_structure(x):
+    # Fastpath: flatten without tree and avoid attribute lookups for ndarrays or lists of scalars/Tensors
+    if isinstance(x, np.ndarray):
+        # flat if contiguous, otherwise flatten(). We just need one dtype here
+        return [x.dtype]
+    try:
+        # check for fast, flat sequence of common types (avoid hitting tree.flatten in hot path)
+        if isinstance(x, (list, tuple)):
+            if not x:  # empty
+                return []
+            # Avoid tree.flatten for flat structures
+            types = []
+            append = types.append
+            for item in x:
+                if hasattr(item, "dtype"):
+                    append(item.dtype)
+                else:
+                    append(type(item))
+            return types
+    except Exception:
+        pass
+    # Fallback
+    return [getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
 
 
 class custom_gradient:

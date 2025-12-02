@@ -309,16 +309,27 @@ def result_type(*dtypes):
     "float64"
 
     """
-    if len(dtypes) == 0:
+    if not dtypes:
+        # If no dtypes provided, default to floatx, this matches
+        # `ops.convert_to_tensor([])`
         # If no dtypes provided, default to floatx, this matches
         # `ops.convert_to_tensor([])`
         return config.floatx()
-    for dtype in dtypes:
-        if dtype in FLOAT8_TYPES:
-            raise ValueError(
-                "There is no implicit conversions from float8 dtypes to others."
-                f" You must cast it internally. Received: {dtypes}"
-            )
+    # Optimize: use generator and any() for FLOAT8_TYPES failure
+    if any(dtype in FLOAT8_TYPES for dtype in dtypes):
+        raise ValueError(
+            "There is no implicit conversions from float8 dtypes to others."
+            f" You must cast it internally. Received: {dtypes}"
+        )
+    # Fastpath: all types are the same string and not None, shortcircuit
+    if len(dtypes) == 1:
+        arg = dtypes[0]
+        if arg is not None:
+            return arg
+    elif len(set(dtypes)) == 1 and all(dtype is not None for dtype in dtypes):
+        # All are same and not None
+        return dtypes[0]
+    # Core logic (expensive path)
     return _lattice_result_type(
         *(config.floatx() if arg is None else arg for arg in dtypes),
     )
