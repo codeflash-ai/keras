@@ -1056,12 +1056,15 @@ def log2(x):
 
 
 def logaddexp(x1, x2):
+    # Compute device only once and reuse it everywhere in the function
+    device = get_device()
+    # Convert inputs and use local device variable
     x1 = convert_to_tensor(x1)
     x2 = convert_to_tensor(x2)
     dtype = dtypes.result_type(x1.dtype, x2.dtype, float)
 
     # TODO: torch.logaddexp doesn't support float16 with cpu
-    if get_device() == "cpu" and dtype == "float16":
+    if device == "cpu" and dtype == "float16":
         x1 = cast(x1, "float32")
         x2 = cast(x2, "float32")
         return cast(torch.logaddexp(x1, x2), dtype)
