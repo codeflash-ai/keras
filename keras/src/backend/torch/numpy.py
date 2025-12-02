@@ -1963,13 +1963,16 @@ def argpartition(x, kth, axis=-1):
     x = torch.transpose(x, axis, -1)
     bottom_ind = torch.topk(-x, kth + 1)[1]
 
-    def set_to_zero(a, i):
-        a[i] = torch.zeros(1, dtype=a.dtype, device=a.device)
-        return a
+    # Vectorized set-to-zero without loop/vmap for much better performance
+    proxy = torch.ones_like(x, dtype=torch.int32)
+    # Use torch.scatter_ to set zeros at bottom_ind indices efficiently
+    idx_shape = bottom_ind.shape
+    gather_dim = x.dim() - 1
+    idx_expanded = [slice(None)] * proxy.dim()
+    idx_expanded[gather_dim] = bottom_ind
+    # The following advanced indexing sets proxy[...] = 0 at bottom_ind positions
+    proxy.scatter_(gather_dim, bottom_ind, 0)
 
-    for _ in range(x.dim() - 1):
-        set_to_zero = torch.vmap(set_to_zero)
-    proxy = set_to_zero(torch.ones_like(x, dtype=torch.int32), bottom_ind)
     top_ind = torch.topk(proxy, x.shape[-1] - kth - 1)[1]
     out = torch.cat([bottom_ind, top_ind], dim=x.dim() - 1)
     return cast(torch.transpose(out, -1, axis), "int32")

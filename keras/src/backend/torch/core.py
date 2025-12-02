@@ -229,8 +229,9 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
+        flat = tree.flatten(x)
         dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
+            *[getattr(item, "dtype", type(item)) for item in flat]
         )
     dtype = to_torch_dtype(dtype)
     return torch.as_tensor(x, dtype=dtype, device=get_device())
@@ -275,14 +276,14 @@ def shape(x):
 
 
 def cast(x, dtype):
-    dtype = to_torch_dtype(dtype)
+    torch_dtype = to_torch_dtype(dtype)
     if isinstance(x, Variable):
         x = x.value
     if is_tensor(x):
-        if x.dtype == dtype:
+        if x.dtype == torch_dtype:
             return x
         else:
-            return x.to(dtype)
+            return x.to(torch_dtype)
     return convert_to_tensor(x, dtype)
 
 
