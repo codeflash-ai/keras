@@ -307,10 +307,12 @@ def amin(x, axis=None, keepdims=False):
 
 
 def append(x1, x2, axis=None):
-    x1, x2 = convert_to_tensor(x1), convert_to_tensor(x2)
+    # Avoid duplicate conversion if x1 or x2 are already tensors
+    x1_tensor = x1 if isinstance(x1, torch.Tensor) else convert_to_tensor(x1)
+    x2_tensor = x2 if isinstance(x2, torch.Tensor) else convert_to_tensor(x2)
     if axis is None:
-        return torch.cat((x1.flatten(), x2.flatten()))
-    return torch.cat((x1, x2), dim=axis)
+        return torch.cat((x1_tensor.flatten(), x2_tensor.flatten()))
+    return torch.cat((x1_tensor, x2_tensor), dim=axis)
 
 
 def arange(start, stop=None, step=None, dtype=None):
