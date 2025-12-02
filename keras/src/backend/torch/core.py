@@ -1,6 +1,7 @@
 import builtins
 import contextlib
 import functools
+from functools import lru_cache
 
 import ml_dtypes
 import numpy as np
@@ -91,8 +92,10 @@ def _parse_device_input(device_name):
     return device_name
 
 
+@lru_cache(maxsize=32)
 def to_torch_dtype(dtype):
-    standardized_dtype = TORCH_DTYPES.get(standardize_dtype(dtype), None)
+    standardized = _standardized_dtype(dtype)
+    standardized_dtype = TORCH_DTYPES.get(standardized, None)
     if standardized_dtype is None:
         raise ValueError(f"Unsupported dtype for PyTorch: {dtype}")
     return standardized_dtype
@@ -191,26 +194,49 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with torch backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with torch backend")
+
+    # Fast path for torch.Tensor (not Variable)
+    # Variable is not defined here, so check only torch.Tensor.
+    # If Variable is present in actual scope,
+    # the original isinstance(x, Variable) or is_tensor(x) should be preserved.
+
+    # Use local function/cache to avoid multiple global lookups for get_device (expensive if has context logic).
+    from keras.src.backend.torch.core import get_device
+    from keras.src.backend.torch.core import is_tensor
+
+    if "Variable" in globals():
+        Variable = globals()["Variable"]
+    else:
+        Variable = ()
+
+    # If x is a Variable or torch.Tensor, handle conversion to correct device/dtype.
     if isinstance(x, Variable) or is_tensor(x):
         if isinstance(x, Variable):
             x = x.value
         device = get_device()
-        if x.device != device:
+        # Only call .to() if required -- skip if already on device and dtype matches.
+        change_device = x.device != device
+        change_dtype = dtype is not None and x.dtype != to_torch_dtype(dtype)
+        if change_device:
             if x.is_meta:
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
-        if dtype is not None:
+        if change_dtype:
             x = x.to(to_torch_dtype(dtype))
         return x
+
+    device = get_device()
+
+    # Fast path for scalars
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
 
     # Convert to np in case of any array-like that is not list or tuple.
@@ -223,17 +249,20 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
             x = x.astype(np.int64)
-        if standardize_dtype(x.dtype) == "bfloat16":
+        # If the dtype is bfloat16 (as reported by standardize_dtype), convert to float32 for torch.
+        std_dtype = _standardized_dtype(x.dtype)
+        if std_dtype == "bfloat16":
             # Torch backend does not support converting bfloat16 ndarray.
             x = x.astype(np.float32)
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
+        # Use generator expression to avoid generating large lists
+        items = (getattr(item, "dtype", type(item)) for item in tree.flatten(x))
+        dtype = result_type(*items)
+
     dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+    return torch.as_tensor(x, dtype=dtype, device=device)
 
 
 def convert_to_numpy(x):
@@ -676,6 +705,11 @@ def remat(f):
         return torch.utils.checkpoint.checkpoint(f, *args, use_reentrant=False)
 
     return wrapped
+
+
+@lru_cache(maxsize=32)
+def _standardized_dtype(dtype):
+    return standardize_dtype(dtype)
 
 
 class custom_gradient:
