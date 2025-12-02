@@ -229,9 +229,16 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
             dtype = "bfloat16"
         dtype = dtype or x.dtype
     if dtype is None:
-        dtype = result_type(
-            *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
-        )
+        # Avoid tree.flatten when x is np.ndarray (known dtype)
+        if isinstance(x, np.ndarray):
+            dtype = x.dtype
+        else:
+            dtype = result_type(
+                *[
+                    getattr(item, "dtype", type(item))
+                    for item in tree.flatten(x)
+                ]
+            )
     dtype = to_torch_dtype(dtype)
     return torch.as_tensor(x, dtype=dtype, device=get_device())
 
