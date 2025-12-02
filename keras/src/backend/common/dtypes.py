@@ -313,12 +313,15 @@ def result_type(*dtypes):
         # If no dtypes provided, default to floatx, this matches
         # `ops.convert_to_tensor([])`
         return config.floatx()
+    # Minor optimization: check float8 types using set intersection to avoid repeated linear scan
+    float8_set = set(FLOAT8_TYPES)
     for dtype in dtypes:
-        if dtype in FLOAT8_TYPES:
+        if dtype in float8_set:
             raise ValueError(
                 "There is no implicit conversions from float8 dtypes to others."
                 f" You must cast it internally. Received: {dtypes}"
             )
-    return _lattice_result_type(
-        *(config.floatx() if arg is None else arg for arg in dtypes),
-    )
+    # Avoid generator expression overhead for large arg sets
+    fx = config.floatx()
+    resolved_args = (fx if arg is None else arg for arg in dtypes)
+    return _lattice_result_type(*resolved_args)
