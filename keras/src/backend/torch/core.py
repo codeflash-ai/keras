@@ -275,14 +275,27 @@ def shape(x):
 
 
 def cast(x, dtype):
-    dtype = to_torch_dtype(dtype)
+    from keras.src.backend.torch.core import (  # local import to avoid cycles
+        Variable,
+    )
+    from keras.src.backend.torch.core import (  # local import to avoid cycles
+        convert_to_tensor,
+    )
+    from keras.src.backend.torch.core import (  # local import to avoid cycles
+        is_tensor,
+    )
+    from keras.src.backend.torch.core import (  # local import to avoid cycles
+        to_torch_dtype,
+    )
+
+    tdtype = to_torch_dtype(dtype)
     if isinstance(x, Variable):
         x = x.value
     if is_tensor(x):
-        if x.dtype == dtype:
+        if x.dtype == tdtype:
             return x
         else:
-            return x.to(dtype)
+            return x.to(tdtype)
     return convert_to_tensor(x, dtype)
 
 
