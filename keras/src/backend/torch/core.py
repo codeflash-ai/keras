@@ -1,6 +1,7 @@
 import builtins
 import contextlib
 import functools
+from functools import lru_cache
 
 import ml_dtypes
 import numpy as np
@@ -67,6 +68,7 @@ def device_scope(device_name):
         global_state.set_global_attribute("torch_device", previous_device)
 
 
+@lru_cache(maxsize=8)
 def get_device():
     device = global_state.get_global_attribute("torch_device", None)
     if device is None:
@@ -92,7 +94,9 @@ def _parse_device_input(device_name):
 
 
 def to_torch_dtype(dtype):
-    standardized_dtype = TORCH_DTYPES.get(standardize_dtype(dtype), None)
+    standardized_dtype = TORCH_DTYPES.get(
+        _memoized_standardize_dtype(dtype), None
+    )
     if standardized_dtype is None:
         raise ValueError(f"Unsupported dtype for PyTorch: {dtype}")
     return standardized_dtype
@@ -676,6 +680,12 @@ def remat(f):
         return torch.utils.checkpoint.checkpoint(f, *args, use_reentrant=False)
 
     return wrapped
+
+
+@lru_cache(maxsize=64)
+def _memoized_standardize_dtype(dtype):
+    # wrapper to allow memoization for the key computation
+    return standardize_dtype(dtype)
 
 
 class custom_gradient:
