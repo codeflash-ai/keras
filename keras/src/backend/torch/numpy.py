@@ -511,6 +511,8 @@ def bitwise_and(x, y):
 
 
 def bitwise_invert(x):
+    if isinstance(x, torch.Tensor):
+        return torch.bitwise_not(x)
     x = convert_to_tensor(x)
     return torch.bitwise_not(x)
 
