@@ -532,8 +532,9 @@ def bitwise_xor(x, y):
 
 
 def bitwise_left_shift(x, y):
-    x = convert_to_tensor(x)
-    if not isinstance(y, int):
+    if not isinstance(x, torch.Tensor):
+        x = convert_to_tensor(x)
+    if not isinstance(y, int) and not isinstance(y, torch.Tensor):
         y = convert_to_tensor(y)
     return torch.bitwise_left_shift(x, y)
 
