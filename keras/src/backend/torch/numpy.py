@@ -1517,11 +1517,15 @@ def split(x, indices_or_sections, axis=0):
     x = convert_to_tensor(x)
     dim = x.shape[axis]
     if not isinstance(indices_or_sections, int):
-        indices_or_sections = convert_to_tensor(indices_or_sections)
-        start_size = indices_or_sections[0:1]
-        end_size = dim - indices_or_sections[-1:]
+        # Optimize: avoid convert_to_tensor (which can be slow on Python lists/tuples)
+        if not isinstance(indices_or_sections, torch.Tensor):
+            indices_or_sections_tensor = convert_to_tensor(indices_or_sections)
+        else:
+            indices_or_sections_tensor = indices_or_sections
+        start_size = indices_or_sections_tensor[0:1]
+        end_size = dim - indices_or_sections_tensor[-1:]
         chunk_sizes = torch.concat(
-            [start_size, torch.diff(indices_or_sections), end_size], dim=0
+            [start_size, torch.diff(indices_or_sections_tensor), end_size], dim=0
         )
         # torch.split doesn't support tensor input for `split_size_or_sections`
         chunk_sizes = chunk_sizes.tolist()
@@ -1542,7 +1546,8 @@ def split(x, indices_or_sections, axis=0):
     )
     if dim == 0 and isinstance(indices_or_sections, int):
         out = [out[0].clone() for _ in range(indices_or_sections)]
-    return list(out)
+    # Most versions of torch.split already return a list; no need to call list() if so
+    return list(out) if not isinstance(out, list) else out
 
 
 def array_split(x, indices_or_sections, axis=0):
