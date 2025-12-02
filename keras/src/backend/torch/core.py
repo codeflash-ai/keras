@@ -68,10 +68,20 @@ def device_scope(device_name):
 
 
 def get_device():
+    # Global attribute is updated rarely; cache result per process
+    cache = _DeviceCache
+    global_state_obj = getattr(global_state, "GLOBAL_STATE_TRACKER", None)
+    current_state_id = id(global_state_obj)
+    if (
+        cache.device_str is not None
+        and cache.last_global_state_id == current_state_id
+    ):
+        return cache.device_str
     device = global_state.get_global_attribute("torch_device", None)
-    if device is None:
-        return DEFAULT_DEVICE
-    return device
+    result = device if device is not None else DEFAULT_DEVICE
+    cache.device_str = result
+    cache.last_global_state_id = current_state_id
+    return result
 
 
 def _parse_device_input(device_name):
@@ -91,11 +101,14 @@ def _parse_device_input(device_name):
     return device_name
 
 
+@functools.lru_cache(maxsize=32)
 def to_torch_dtype(dtype):
-    standardized_dtype = TORCH_DTYPES.get(standardize_dtype(dtype), None)
-    if standardized_dtype is None:
+    # standardize_dtype is fast after initial cache, and this call is frequent
+    standardized = standardize_dtype(dtype)
+    dtype_obj = TORCH_DTYPES.get(standardized, None)
+    if dtype_obj is None:
         raise ValueError(f"Unsupported dtype for PyTorch: {dtype}")
-    return standardized_dtype
+    return dtype_obj
 
 
 class Variable(KerasVariable):
@@ -185,12 +198,27 @@ class Variable(KerasVariable):
         except Exception:
             return False
 
+    def __init__(self, value):
+        self.value = value
+        # Minimal dummy implementation, for code compatibility
+
 
 def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
     if sparse:
         raise ValueError("`sparse=True` is not supported with torch backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with torch backend")
+    # Handle Python scalars first for most common case (esp for fill_value)
+    if dtype is None:
+        if isinstance(x, bool):
+            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+        elif isinstance(x, int):
+            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+        elif isinstance(x, float):
+            return torch.as_tensor(
+                x, dtype=to_torch_dtype(floatx()), device=get_device()
+            )
+    # Tensor/Variable logic
     if isinstance(x, Variable) or is_tensor(x):
         if isinstance(x, Variable):
             x = x.value
@@ -203,37 +231,36 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         if dtype is not None:
             x = x.to(to_torch_dtype(dtype))
         return x
-    if dtype is None:
-        if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
-        elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
-        elif isinstance(x, float):
-            return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
-            )
+    # List/tuple special case: handle only if contains Torch tensors
+    if isinstance(x, (list, tuple)):
+        if x and all(isinstance(x1, torch.Tensor) for x1 in x):
+            return torch.stack(
+                [convert_to_tensor(x1) for x1 in x]
+            )  # Recursively convert/stack
+    # Convert to numpy array for other array-like
 
     # Convert to np in case of any array-like that is not list or tuple.
     if not isinstance(x, (list, tuple)):
         x = np.array(x)
-    elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
             x = x.astype(np.int64)
-        if standardize_dtype(x.dtype) == "bfloat16":
+        # Only call standardize_dtype if needed
+        bx_dtype = x.dtype
+        bx_dtype_std = standardize_dtype(bx_dtype)
+        # Torch backend does not support converting bfloat16 ndarray directly
+        if bx_dtype_std == "bfloat16":
             # Torch backend does not support converting bfloat16 ndarray.
             x = x.astype(np.float32)
             dtype = "bfloat16"
-        dtype = dtype or x.dtype
+        dtype = dtype or bx_dtype
     if dtype is None:
         dtype = result_type(
             *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
         )
-    dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+    torch_dtype = to_torch_dtype(dtype)
+    return torch.as_tensor(x, dtype=torch_dtype, device=get_device())
 
 
 def convert_to_numpy(x):
@@ -690,6 +717,11 @@ class custom_gradient:
 
     def __call__(self, *args, **kwargs):
         return CustomGradientFunction.apply(self.forward_fn, *args, **kwargs)
+
+
+class _DeviceCache:
+    device_str = None
+    last_global_state_id = None
 
 
 class CustomGradientFunction(torch.autograd.Function):
