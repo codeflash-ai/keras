@@ -201,7 +201,9 @@ def max(x, axis=None, keepdims=False, initial=None):
         if initial is None:
             raise ValueError("Cannot compute the max of an empty tensor.")
         elif keepdims:
-            return torch.full((1,) * len(x.shape), initial)
+            # Precompute shape once
+            shape = (1,) * len(x.shape)
+            return torch.full(shape, initial)
         else:
             return torch.tensor(initial)
 
@@ -214,9 +216,11 @@ def max(x, axis=None, keepdims=False, initial=None):
 
     if initial is not None:
         dtype = to_torch_dtype(result.dtype)
-        initial = convert_to_tensor(initial, dtype=dtype)
+        initial_tensor = convert_to_tensor(initial, dtype=dtype)
+        shape = result.shape
+        # Use torch.full directly with required shape
         return torch.maximum(
-            result, torch.full(result.shape, initial, dtype=dtype)
+            result, torch.full(shape, initial_tensor, dtype=dtype)
         )
     return result
 
@@ -1920,9 +1924,14 @@ def correlate(x1, x2, mode="valid"):
         x1 = torch.broadcast_to(x1, new_shape + [x1.shape[-1]])
         x2 = torch.broadcast_to(x2, new_shape + [x2.shape[-1]])
 
-    num_signals = torch.tensor(x1.shape[:-1]).prod()
-    x1 = torch.reshape(x1, (int(num_signals), x1.size(-1)))
-    x2 = torch.reshape(x2, (int(num_signals), x2.size(-1)))
+    # Avoid construction of intermediate tensors, use Python prod
+    num_signals = 1
+    for dim in x1.shape[:-1]:
+        num_signals *= dim
+    # Efficient reshape
+    x1 = torch.reshape(x1, (num_signals, x1.size(-1)))
+    x2 = torch.reshape(x2, (num_signals, x2.size(-1)))
+
 
     output = torch.nn.functional.conv1d(
         x1, x2.unsqueeze(1), groups=x1.size(0), padding=x2.size(-1) - 1
