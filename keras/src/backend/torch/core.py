@@ -1,6 +1,7 @@
 import builtins
 import contextlib
 import functools
+from functools import lru_cache
 
 import ml_dtypes
 import numpy as np
@@ -68,10 +69,7 @@ def device_scope(device_name):
 
 
 def get_device():
-    device = global_state.get_global_attribute("torch_device", None)
-    if device is None:
-        return DEFAULT_DEVICE
-    return device
+    return _get_global_device()
 
 
 def _parse_device_input(device_name):
@@ -92,10 +90,12 @@ def _parse_device_input(device_name):
 
 
 def to_torch_dtype(dtype):
-    standardized_dtype = TORCH_DTYPES.get(standardize_dtype(dtype), None)
-    if standardized_dtype is None:
+    # Use cached standardization for repeated calls
+    dtype_key = _cached_standardize_dtype(dtype)
+    torch_dtype = TORCH_DTYPES.get(dtype_key, None)
+    if torch_dtype is None:
         raise ValueError(f"Unsupported dtype for PyTorch: {dtype}")
-    return standardized_dtype
+    return torch_dtype
 
 
 class Variable(KerasVariable):
@@ -191,39 +191,47 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         raise ValueError("`sparse=True` is not supported with torch backend")
     if ragged:
         raise ValueError("`ragged=True` is not supported with torch backend")
-    if isinstance(x, Variable) or is_tensor(x):
-        if isinstance(x, Variable):
+    is_var = "Variable" in globals() and isinstance(x, Variable)
+    device = get_device()
+
+    # Fast path for torch.Tensor or Variable
+    if is_var or isinstance(x, torch.Tensor):
+        if is_var:
             x = x.value
-        device = get_device()
         if x.device != device:
-            if x.is_meta:
+            if getattr(x, "is_meta", False):
                 x = torch.empty_like(x, device=device)
             else:
                 x = x.to(device)
         if dtype is not None:
-            x = x.to(to_torch_dtype(dtype))
+            tdtype = to_torch_dtype(dtype)
+            if x.dtype != tdtype:
+                x = x.to(tdtype)
         return x
     if dtype is None:
         if isinstance(x, bool):
-            return torch.as_tensor(x, dtype=torch.bool, device=get_device())
+            return torch.as_tensor(x, dtype=torch.bool, device=device)
         elif isinstance(x, int):
-            return torch.as_tensor(x, dtype=torch.int32, device=get_device())
+            return torch.as_tensor(x, dtype=torch.int32, device=device)
         elif isinstance(x, float):
             return torch.as_tensor(
-                x, dtype=to_torch_dtype(floatx()), device=get_device()
+                x, dtype=to_torch_dtype(floatx()), device=device
             )
+
+    # Convert to np.ndarray unless list/tuple
 
     # Convert to np in case of any array-like that is not list or tuple.
     if not isinstance(x, (list, tuple)):
         x = np.array(x)
     elif len(x) > 0 and any(isinstance(x1, torch.Tensor) for x1 in x):
-        # Handle list or tuple of torch tensors
-        return torch.stack([convert_to_tensor(x1) for x1 in x])
+        return torch.stack([convert_to_tensor(item) for item in x])
+
+    # np.ndarray conversion
     if isinstance(x, np.ndarray):
         if x.dtype == np.uint32:
             # Torch backend does not support uint32.
             x = x.astype(np.int64)
-        if standardize_dtype(x.dtype) == "bfloat16":
+        if _cached_standardize_dtype(x.dtype) == "bfloat16":
             # Torch backend does not support converting bfloat16 ndarray.
             x = x.astype(np.float32)
             dtype = "bfloat16"
@@ -232,8 +240,8 @@ def convert_to_tensor(x, dtype=None, sparse=None, ragged=None):
         dtype = result_type(
             *[getattr(item, "dtype", type(item)) for item in tree.flatten(x)]
         )
-    dtype = to_torch_dtype(dtype)
-    return torch.as_tensor(x, dtype=dtype, device=get_device())
+    tdtype = to_torch_dtype(dtype)
+    return torch.as_tensor(x, dtype=tdtype, device=device)
 
 
 def convert_to_numpy(x):
@@ -676,6 +684,25 @@ def remat(f):
         return torch.utils.checkpoint.checkpoint(f, *args, use_reentrant=False)
 
     return wrapped
+
+
+# -- Module-local cache for device lookups:
+def _get_default_device():
+    return DEFAULT_DEVICE
+
+
+def _get_global_device():
+    # Optimize for most common case where no user override -- no threadsafe issue for reads!
+    device = global_state.get_global_attribute("torch_device", None)
+    if device is None:
+        return DEFAULT_DEVICE
+    return device
+
+
+# Use lru_cache for standardized dtype which is called on a small bounded set of values.
+@lru_cache(maxsize=64)
+def _cached_standardize_dtype(dtype):
+    return standardize_dtype(dtype)
 
 
 class custom_gradient:
