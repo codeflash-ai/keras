@@ -297,13 +297,12 @@ def amax(x, axis=None, keepdims=False):
 
 
 def amin(x, axis=None, keepdims=False):
-    x = convert_to_tensor(x)
+    xt = convert_to_tensor(x)
     if axis is None:
-        return torch.amin(x)
+        return torch.amin(xt)
     if axis == () or axis == []:
-        # Torch handles the empty axis case differently from numpy.
-        return x
-    return torch.amin(x, dim=axis, keepdim=keepdims)
+        return xt
+    return torch.amin(xt, dim=axis, keepdim=keepdims)
 
 
 def append(x1, x2, axis=None):
@@ -1205,27 +1204,31 @@ def meshgrid(*x, indexing="xy"):
 
 
 def min(x, axis=None, keepdims=False, initial=None):
-    x = convert_to_tensor(x)
-    if 0 in x.shape:
+    xt = convert_to_tensor(x)
+    # Prefer numel check which is faster on torch.Tensor
+    if hasattr(xt, "numel") and xt.numel() == 0:
         if initial is None:
             raise ValueError("Cannot compute the min of an empty tensor.")
         elif keepdims:
-            return torch.full((1,) * len(x.shape), initial)
+            return torch.full((1,) * len(xt.shape), initial)
         else:
             return torch.tensor(initial)
 
     if axis is None:
-        result = torch.min(x)
+        result = torch.min(xt)
     else:
-        result = amin(x, axis=axis, keepdims=keepdims)
+        result = amin(xt, axis=axis, keepdims=keepdims)
 
-    if isinstance(getattr(result, "values", None), torch.Tensor):
-        result = result.values
+    # Unwrap values if a namedtuple is returned
+    values = getattr(result, "values", None)
+    if isinstance(values, torch.Tensor):
+        result = values
+
 
     if initial is not None:
-        dtype = to_torch_dtype(result.dtype)
-        initial = convert_to_tensor(initial, dtype=dtype)
-        return torch.minimum(result, initial)
+        dtype = to_torch_dtype(getattr(result, "dtype", result))
+        init_tensor = convert_to_tensor(initial, dtype=dtype)
+        return torch.minimum(result, init_tensor)
     return result
 
 
