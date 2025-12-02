@@ -1264,6 +1264,9 @@ def nan_to_num(x, nan=0.0, posinf=None, neginf=None):
 
 
 def ndim(x):
+    # Fast path: avoid redundant tensor conversion if already tensor
+    if isinstance(x, torch.Tensor):
+        return x.ndim
     x = convert_to_tensor(x)
     return x.ndim
 
@@ -1466,14 +1469,19 @@ def roll(x, shift, axis=None):
 
 
 def searchsorted(sorted_sequence, values, side="left"):
-    if ndim(sorted_sequence) != 1:
+    # Fast path: avoid redundant conversion in ndim if already tensor
+    is_tensor = isinstance(sorted_sequence, torch.Tensor)
+    ndim_val = sorted_sequence.ndim if is_tensor else ndim(sorted_sequence)
+    if ndim_val != 1:
         raise ValueError(
             "`searchsorted` only supports 1-D sorted sequences. "
             "You can use `keras.ops.vectorized_map` "
             "to extend it to N-D sequences. Received: "
             f"sorted_sequence.shape={sorted_sequence.shape}"
         )
-    out_int32 = sorted_sequence.shape[0] <= np.iinfo(np.int32).max
+    # sorted_sequence.shape is valid on both tensor and ndarray
+    length = sorted_sequence.shape[0]
+    out_int32 = length <= np.iinfo(np.int32).max
     return torch.searchsorted(
         sorted_sequence, values, side=side, out_int32=out_int32
     )
