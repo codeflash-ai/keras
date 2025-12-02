@@ -93,18 +93,26 @@ def _type_promotion_lattice():
 def _make_lattice_upper_bounds():
     lattice = _type_promotion_lattice()
     upper_bounds = {node: {node} for node in lattice}
+    # Cache keys to avoid recomputing lattice[b] inside loop unnecessarily
+    lattice_values_cache = lattice
+    # For each node, perform DFS-like iterative upper bound expansion
     for n in lattice:
-        while True:
-            new_upper_bounds = set().union(
-                *(lattice[b] for b in upper_bounds[n])
-            )
-            if n in new_upper_bounds:
-                raise ValueError(
-                    f"cycle detected in type promotion lattice for node {n}"
-                )
-            if new_upper_bounds.issubset(upper_bounds[n]):
-                break
-            upper_bounds[n] |= new_upper_bounds
+        node_upper = upper_bounds[n]
+        lattice_refs = lattice_values_cache
+        # Instead of repeatedly calling set().union(*...), maintain a worklist
+        # for BFS-like exploration to improve efficiency (avoids recomputing unions unnecessarily)
+        worklist = list(node_upper)
+        while worklist:
+            b = worklist.pop()
+            for target in lattice_refs[b]:
+                if target not in node_upper:
+                    node_upper.add(target)
+                    if target == n:
+                        # cycle detected!
+                        raise ValueError(
+                            f"cycle detected in type promotion lattice for node {n}"
+                        )
+                    worklist.append(target)
     return upper_bounds
 
 
