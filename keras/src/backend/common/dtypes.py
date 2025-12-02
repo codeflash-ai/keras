@@ -63,6 +63,10 @@ def _type_promotion_lattice():
     Return the type promotion lattice in the form of a DAG.
     This DAG maps each type to its immediately higher type on the lattice.
     """
+    lattice = getattr(_type_promotion_lattice, "_cached", None)
+    if lattice is not None:
+        return lattice
+
     (b1,) = BOOL_TYPES
     (u1, u2, u4, u8, i1, i2, i4, i8) = INT_TYPES
     bf, f2, f4, f8 = FLOAT_TYPES
@@ -87,6 +91,7 @@ def _type_promotion_lattice():
         c64: [c128],
         c128: [],
     }
+    _type_promotion_lattice._cached = out
     return out
 
 
