@@ -243,30 +243,35 @@ BIT64_TO_BIT32_DTYPE = {
 
 
 def _lattice_result_type(*args):
-    dtypes, weak_types = zip(*(_dtype_and_weaktype(arg) for arg in args))
-    if len(dtypes) == 1:
-        out_dtype = dtypes[0]
-        out_weak_type = weak_types[0]
-    elif len(set(dtypes)) == 1 and not all(weak_types):
-        # Trivial promotion case. This allows extended dtypes through.
-        out_dtype = dtypes[0]
-        out_weak_type = False
-    elif all(weak_types):
-        # If all inputs are weakly typed, we compute the bound of the
-        # strongly-typed counterparts and apply the weak type at the end. This
-        # avoids returning the incorrect result with non-canonical weak types
-        # (e.g. weak int16).
-        out_dtype = _least_upper_bound(
-            *{_respect_weak_type(d, False) for d in dtypes}
-        )
-        out_weak_type = True
+    # Fast path for len(args) == 1 (most common path)
+    if len(args) == 1:
+        dtype, weak_type = _dtype_and_weaktype(args[0])
+        out_dtype = dtype
+        out_weak_type = weak_type
     else:
-        out_dtype = _least_upper_bound(
-            *{_respect_weak_type(d, w) for d, w in zip(dtypes, weak_types)}
-        )
-        out_weak_type = any(out_dtype is t for t in WEAK_TYPES)
+        # Inline tuple/list comp for speed
+        zw = [_dtype_and_weaktype(arg) for arg in args]
+        dtypes, weak_types = zip(*zw)
+        uniq_dtypes = len(set(dtypes)) == 1
 
-    out_weak_type = (out_dtype != "bool") and out_weak_type
+        # Second most common path (all dtypes the same, not all weaktypes)
+        if uniq_dtypes and not all(weak_types):
+            out_dtype = dtypes[0]
+            out_weak_type = False
+        elif all(weak_types):
+            # Bound over strongly-typed only (force False)
+            strong_types = tuple(_respect_weak_type(d, False) for d in dtypes)
+            out_dtype = _least_upper_bound(*strong_types)
+            out_weak_type = True
+        else:
+            # 
+            promoted_types = tuple(_respect_weak_type(d, w) for d, w in zip(dtypes, weak_types))
+            out_dtype = _least_upper_bound(*promoted_types)
+            out_weak_type = any(out_dtype is t for t in WEAK_TYPES)
+
+    # Slightly faster than compound statement when bool branch first
+    if out_dtype == "bool":
+        out_weak_type = False
     precision = config.floatx()[-2:]
     if out_weak_type:
         out_dtype = _resolve_weak_type(out_dtype, precision=precision)
@@ -309,16 +314,23 @@ def result_type(*dtypes):
     "float64"
 
     """
-    if len(dtypes) == 0:
+    if not dtypes:
         # If no dtypes provided, default to floatx, this matches
         # `ops.convert_to_tensor([])`
         return config.floatx()
+    # Fast path: Prevent unneeded function calls and repeated config.floatx()
+    any_none = False
     for dtype in dtypes:
         if dtype in FLOAT8_TYPES:
             raise ValueError(
                 "There is no implicit conversions from float8 dtypes to others."
                 f" You must cast it internally. Received: {dtypes}"
             )
-    return _lattice_result_type(
-        *(config.floatx() if arg is None else arg for arg in dtypes),
-    )
+        if dtype is None:
+            any_none = True
+    # Only call config.floatx() once if needed
+    if any_none:
+        floatx_value = config.floatx()
+        args = tuple(floatx_value if arg is None else arg for arg in dtypes)
+        return _lattice_result_type(*args)
+    return _lattice_result_type(*dtypes)
