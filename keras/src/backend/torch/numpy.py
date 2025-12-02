@@ -1870,9 +1870,10 @@ def eye(N, M=None, k=0, dtype=None):
 
 
 def floor_divide(x1, x2):
-    if not isinstance(x1, (int, float)):
+    # Convert Python/scalar types in a single fast-path check
+    if not isinstance(x1, (int, float, torch.Tensor)):
         x1 = convert_to_tensor(x1)
-    if not isinstance(x2, (int, float)):
+    if not isinstance(x2, (int, float, torch.Tensor)):
         x2 = convert_to_tensor(x2)
     dtype = dtypes.result_type(
         getattr(x1, "dtype", type(x1)),
