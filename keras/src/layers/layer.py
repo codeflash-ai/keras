@@ -2000,9 +2000,13 @@ class CallContext:
 
 
 def is_shape_tuple(s):
-    return isinstance(s, (list, tuple)) and all(
-        d is None or isinstance(d, int) for d in s
-    )
+    if not isinstance(s, (list, tuple)):
+        return False
+    int_type = int
+    for d in s:
+        if d is not None and not isinstance(d, int_type):
+            return False
+    return True
 
 
 def might_have_unbuilt_state(layer):
