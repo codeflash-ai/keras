@@ -483,15 +483,25 @@ def is_torch_dataset(dataset):
 def _mro_matches(
     dataset, class_names, module_prefixes=(), module_substrings=()
 ):
-    if not hasattr(dataset, "__class__"):
+    # Fast fail if no __class__ attribute
+    cls = getattr(dataset, "__class__", None)
+    if cls is None:
         return False
-    for parent in dataset.__class__.__mro__:
-        if parent.__name__ in class_names:
-            mod = str(parent.__module__)
-            if any(mod.startswith(pref) for pref in module_prefixes):
-                return True
-            if any(subs in mod for subs in module_substrings):
-                return True
+    # Use local variable to avoid attribute lookup inside loop
+    mro = cls.__mro__
+    class_names_set = set(class_names)  # Convert to set for O(1) lookup
+    for parent in mro:
+        name = parent.__name__
+        if name in class_names_set:
+            mod = parent.__module__
+            # Fast path: Check prefix with str.startswith for all prefixes
+            for pref in module_prefixes:
+                if mod.startswith(pref):
+                    return True
+            # Fast path: Check substring with str.__contains__ for all substrings
+            for subs in module_substrings:
+                if subs in mod:
+                    return True
     return False
 
 
