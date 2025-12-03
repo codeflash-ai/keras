@@ -2006,4 +2006,8 @@ def is_shape_tuple(s):
 
 
 def might_have_unbuilt_state(layer):
-    return any(not lr.built for lr in layer._layers)
+    # Use a for-loop to short-circuit immediately on first unbuilt layer
+    for lr in layer._layers:
+        if not lr.built:
+            return True
+    return False
