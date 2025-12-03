@@ -1894,14 +1894,16 @@ def get_shapes_dict(call_spec):
     ```
     """
     shapes_dict = {}
-    for k, v in call_spec.tensor_arguments_dict.items():
+    tensor_args = call_spec.tensor_arguments_dict
+    nested_names = call_spec.nested_tensor_argument_names
+    for k, v in tensor_args.items():
         if k == "mask" or k.endswith("_mask"):
             # Do not include mask tensors in shapes dict
             continue
         if k == "kwargs" or k == "args":
             # Do not include catch-alls in shapes dict
             continue
-        if k in call_spec.nested_tensor_argument_names:
+        if k in nested_names:
             shapes_dict[f"{k}_shape"] = tree.map_structure(
                 lambda x: backend.standardize_shape(x.shape), v
             )
