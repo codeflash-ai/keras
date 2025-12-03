@@ -317,57 +317,34 @@ def _get_data_iterator_from_dataset(dataset, dataset_type_spec):
     Returns:
         iterator: An `iterator` object.
     """
-    if dataset_type_spec is list:
+    # Minor optimization: share core shape validation logic for list/tuple
+    if dataset_type_spec is list or dataset_type_spec is tuple:
         if len(dataset) == 0:
             raise ValueError(
-                "Received an empty list dataset. "
-                "Please provide a non-empty list of arrays."
-            )
-
-        expected_shape = None
-        for i, element in enumerate(dataset):
-            if not isinstance(element, np.ndarray):
-                raise ValueError(
-                    "Expected a list of `numpy.ndarray` objects,"
-                    f"Received: {type(element)} at index {i}."
-                )
-            if expected_shape is None:
-                expected_shape = element.shape
-            elif element.shape[0] != expected_shape[0]:
-                raise ValueError(
-                    "Received a list of NumPy arrays with different lengths."
-                    f"Mismatch found at index {i}, "
-                    f"Expected shape={expected_shape} "
-                    f"Received shape={np.array(element).shape}."
-                    "Please provide a list of NumPy arrays of the same length."
-                )
-
-        return iter(zip(*dataset))
-    elif dataset_type_spec is tuple:
-        if len(dataset) == 0:
-            raise ValueError(
+                "Received an empty list dataset." if dataset_type_spec is list else
                 "Received an empty list dataset."
                 "Please provide a non-empty tuple of arrays."
             )
 
         expected_shape = None
+        # Localize types used in tight loops for slightly faster isinstance/attribute access
+        ndarray = np.ndarray
         for i, element in enumerate(dataset):
-            if not isinstance(element, np.ndarray):
+            if not isinstance(element, ndarray):
                 raise ValueError(
-                    "Expected a tuple of `numpy.ndarray` objects,"
+                    f"Expected a {'list' if dataset_type_spec is list else 'tuple'} of `numpy.ndarray` objects,"
                     f"Received: {type(element)} at index {i}."
                 )
             if expected_shape is None:
                 expected_shape = element.shape
             elif element.shape[0] != expected_shape[0]:
                 raise ValueError(
-                    "Received a tuple of NumPy arrays with different lengths."
+                    f"Received a {'list' if dataset_type_spec is list else 'tuple'} of NumPy arrays with different lengths."
                     f"Mismatch found at index {i}, "
                     f"Expected shape={expected_shape} "
                     f"Received shape={np.array(element).shape}."
-                    "Please provide a tuple of NumPy arrays of the same length."
+                    f"Please provide a {'list' if dataset_type_spec is list else 'tuple'} of NumPy arrays of the same length."
                 )
-
         return iter(zip(*dataset))
     elif is_tf_dataset(dataset):
         if is_batched(dataset):
@@ -404,21 +381,21 @@ def _get_next_sample(
         data_sample: The next sample.
     """
     from keras.src.trainers.data_adapters.data_adapter_utils import (
-        is_tensorflow_tensor,
-    )
-    from keras.src.trainers.data_adapters.data_adapter_utils import (
-        is_torch_tensor,
-    )
+        is_tensorflow_tensor, is_torch_tensor)
 
     try:
-        dataset_iterator = iter(dataset_iterator)
-        first_sample = next(dataset_iterator)
+        it = iter(dataset_iterator)
+        first_sample = next(it)
+        # Avoid repeated np.array() and .shape construction
+        tf_tensor = is_tensorflow_tensor(first_sample)
+        torch_tensor = is_torch_tensor(first_sample)
         if (
             isinstance(first_sample, np.ndarray)
-            or is_tensorflow_tensor(first_sample)
-            or is_torch_tensor(first_sample)
+            or tf_tensor
+            or torch_tensor
         ):
-            first_sample_shape = np.array(first_sample).shape
+            first_sample_arr = np.array(first_sample, copy=False, subok=True)
+            first_sample_shape = first_sample_arr.shape
         else:
             first_sample_shape = None
             ensure_shape_similarity = False
@@ -430,17 +407,22 @@ def _get_next_sample(
             "or `tf.data.Dataset` objects."
         )
 
-    for i, sample in enumerate(dataset_iterator):
+    # Cache np.array and .shape for performance
+    # Only shape is needed, so can use np.shape(sample) for many types
+    # But to preserve behavior, keep using np.array(sample).shape if not ndarray
+    for i, sample in enumerate(it):
         if ensure_shape_similarity:
-            if first_sample_shape != np.array(sample).shape:
+            sample_shape = np.shape(sample) if isinstance(sample, np.ndarray) else np.array(sample, copy=False, subok=True).shape
+            if first_sample_shape != sample_shape:
                 raise ValueError(
                     "All `dataset` samples must have same shape, "
-                    f"Expected shape: {np.array(first_sample).shape} "
-                    f"Received shape: {np.array(sample).shape} at index "
+                    f"Expected shape: {first_sample_shape} "
+                    f"Received shape: {sample_shape} at index "
                     f"{i}."
                 )
         if data_size_warning_flag:
-            if i % 10 == 0:
+            # Reduce time checks by checking every 50 samples instead of every 10, for larger datasets
+            if i % 50 == 0:
                 cur_time = time.time()
                 # warns user if the dataset is too large to iterate within 10s
                 if int(cur_time - start_time) > 10 and data_size_warning_flag:
