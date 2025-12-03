@@ -1938,42 +1938,47 @@ def update_shapes_dict_for_target_fn(
     if utils.is_default(target_fn):
         return None
     sig = inspect.signature(target_fn)
-    expected_names = []
-    for name, param in sig.parameters.items():
+    parameters = sig.parameters
+    expected_names = [
+        name
+        for name, param in parameters.items()
         if param.kind in (
             param.POSITIONAL_OR_KEYWORD,
             param.POSITIONAL_ONLY,
             param.KEYWORD_ONLY,
-        ):
-            expected_names.append(name)
+        )
+    ]
+
+    # Single arg: don't check names, pass first shape.
 
     # Single arg: don't check names, pass first shape.
     if len(expected_names) == 1:
         key = expected_names[0]
-        values = tuple(shapes_dict.values())
-        if values:
-            input_shape = values[0]
-        else:
-            input_shape = None
+        # Use next(iter...) for O(1) lookup versus tuple(shapes_dict.values())
+        input_shape = next(iter(shapes_dict.values()), None)
         return {key: input_shape}
 
     # Multiple args: check that all names line up.
     kwargs = {}
+    method_name = target_fn.__name__
+    error_preamble = (
+        f"For a `{method_name}()` method with more than one argument, all "
+        "arguments should have a `_shape` suffix and match an argument "
+        f"from `call()`. E.g. `{method_name}(self, foo_shape, bar_shape)` "
+    )
+    suffix = "_shape"
+    suffix_len = len(suffix)
+    call_args_set = call_spec.arguments_dict
+
     for name in expected_names:
-        method_name = target_fn.__name__
-        error_preamble = (
-            f"For a `{method_name}()` method with more than one argument, all "
-            "arguments should have a `_shape` suffix and match an argument "
-            f"from `call()`. E.g. `{method_name}(self, foo_shape, bar_shape)` "
-        )
-        if not name.endswith("_shape"):
+        if not (name.endswith(suffix)):
             raise ValueError(
                 f"{error_preamble} For layer '{class_name}', "
                 f"Received `{method_name}()` argument "
                 f"`{name}`, which does not end in `_shape`."
             )
-        expected_call_arg = utils.removesuffix(name, "_shape")
-        if expected_call_arg not in call_spec.arguments_dict:
+        expected_call_arg = name[:-suffix_len]  # Inline removesuffix for fast slicing
+        if expected_call_arg not in call_args_set:
             raise ValueError(
                 f"{error_preamble} For layer '{class_name}', "
                 f"received `{method_name}()` argument "
