@@ -631,16 +631,17 @@ def _restore_dataset_from_list(
     ):
         # Save structure by taking the first element.
         element_spec = dataset_as_list[0]
-        # Flatten each element.
-        dataset_as_list = [tree.flatten(sample) for sample in dataset_as_list]
-        # Combine respective elements at all indices.
-        dataset_as_list = [np.array(sample) for sample in zip(*dataset_as_list)]
+        # Flatten each element. Avoid intermediate list materialization by using map.
+        flat_list = list(map(tree.flatten, dataset_as_list))
+        # Efficiently combine respective elements at all indices using generators.
+        arr_list = list(map(np.array, zip(*flat_list)))
         # Recreate the original structure of elements.
-        dataset_as_list = tree.pack_sequence_as(element_spec, dataset_as_list)
+        packed = tree.pack_sequence_as(element_spec, arr_list)
+        # Turn lists to tuples as tf.data will fail on lists.
         # Turn lists to tuples as tf.data will fail on lists.
         return tree.traverse(
             lambda x: tuple(x) if isinstance(x, list) else x,
-            dataset_as_list,
+            packed,
             top_down=False,
         )
 
