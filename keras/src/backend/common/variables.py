@@ -589,19 +589,20 @@ def standardize_dtype(dtype):
 
 
 def standardize_shape(shape):
+    backend = config.backend()
     if not isinstance(shape, tuple):
         if shape is None:
             raise ValueError("Undefined shapes are not supported.")
         if not hasattr(shape, "__iter__"):
             raise ValueError(f"Cannot convert '{shape}' to a shape.")
-        if config.backend() == "tensorflow":
+        if backend == "tensorflow":
             if isinstance(shape, tf.TensorShape):
                 # `tf.TensorShape` may contain `Dimension` objects.
                 # We need to convert the items in it to either int or `None`
                 shape = shape.as_list()
         shape = tuple(shape)
 
-    if config.backend() == "jax":
+    if backend == "jax":
         # Replace `_DimExpr` (dimension expression) with None
         from jax import export as jax_export
 
@@ -609,15 +610,14 @@ def standardize_shape(shape):
             None if jax_export.is_symbolic_dim(d) else d for d in shape
         )
 
-    if config.backend() == "torch":
-        # `shape` might be `torch.Size`. We need to convert the items in it to
-        # either int or `None`
-        shape = tuple(map(lambda x: int(x) if x is not None else None, shape))
+    elif backend == "torch":
+        shape = tuple(int(x) if x is not None else None for x in shape)
 
     for e in shape:
         if e is None:
             continue
-        if not is_int_dtype(type(e)):
+        # Faster check than is_int_dtype(type(e)), as e from above is already int
+        if not isinstance(e, int):
             raise ValueError(
                 f"Cannot convert '{shape}' to a shape. "
                 f"Found invalid entry '{e}' of type '{type(e)}'. "
