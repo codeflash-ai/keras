@@ -13,6 +13,13 @@ from keras.src.utils import file_utils
 from keras.src.utils import io_utils
 from keras.src.utils.module_utils import grain
 
+_IS_TF_DATASET_CLASS_NAMES = {"DatasetV2", "Dataset"}
+
+_IS_TF_DATASET_MODULE_SUBSTRINGS = (
+    "tensorflow.python.data",  # TF classic
+    "tensorflow.data",  # newer TF paths
+)
+
 
 @keras_export("keras.utils.split_dataset")
 def split_dataset(
@@ -460,11 +467,8 @@ def _get_next_sample(
 def is_tf_dataset(dataset):
     return _mro_matches(
         dataset,
-        class_names=("DatasetV2", "Dataset"),
-        module_substrings=(
-            "tensorflow.python.data",  # TF classic
-            "tensorflow.data",  # newer TF paths
-        ),
+        class_names=_IS_TF_DATASET_CLASS_NAMES,
+        module_substrings=_IS_TF_DATASET_MODULE_SUBSTRINGS,
     )
 
 
@@ -483,15 +487,39 @@ def is_torch_dataset(dataset):
 def _mro_matches(
     dataset, class_names, module_prefixes=(), module_substrings=()
 ):
-    if not hasattr(dataset, "__class__"):
+    # Fast path for common failure: class attribute missing
+    cls = getattr(dataset, "__class__", None)
+    if cls is None:
         return False
-    for parent in dataset.__class__.__mro__:
-        if parent.__name__ in class_names:
-            mod = str(parent.__module__)
-            if any(mod.startswith(pref) for pref in module_prefixes):
+
+    # Convert class_names to set for faster lookup if not already a set
+    if not isinstance(class_names, set):
+        class_names = set(class_names)
+
+    # If possible, avoid using __mro__ (eg. non-type objects)
+    mro = getattr(cls, "__mro__", ())
+    for parent in mro:
+        # Fast set lookup for name match
+        parent_name = parent.__name__
+        if parent_name in class_names:
+            # parent.__module__ is already str in practice.
+            mod = parent.__module__
+
+            # Use tuple for faster startswith/in for multiple prefixes/substrings
+            if module_prefixes and mod.startswith(module_prefixes):
                 return True
-            if any(subs in mod for subs in module_substrings):
-                return True
+
+            # Combine multiple substring checks in a single pass if possible
+            if module_substrings:
+                # We manually unroll for small tuples of module_substrings
+                # for performance.
+                if (
+                    len(module_substrings) == 2
+                    and (module_substrings[0] in mod or module_substrings[1] in mod)
+                ):
+                    return True
+                elif any(sub in mod for sub in module_substrings):
+                    return True
     return False
 
 
