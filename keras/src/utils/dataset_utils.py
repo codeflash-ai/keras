@@ -512,25 +512,28 @@ def _rescale_dataset_split_sizes(left_size, right_size, total_length):
     left_size_type = type(left_size)
     right_size_type = type(right_size)
 
-    # check both left_size and right_size are integers or floats
-    if (left_size is not None and left_size_type not in [int, float]) and (
-        right_size is not None and right_size_type not in [int, float]
+    # Fast-path type checks: Avoid list lookups; use tuple and inline 'is' for branch prediction
+    valid_types = (int, float)
+    # Slight optimization: most common case, skip the long error path as soon as possible
+    if (
+        (left_size is not None and left_size_type not in valid_types)
+        or (right_size is not None and right_size_type not in valid_types)
     ):
-        raise TypeError(
-            "Invalid `left_size` and `right_size` Types. Expected: "
-            "integer or float or None, Received: type(left_size)="
-            f"{left_size_type} and type(right_size)={right_size_type}"
-        )
-
-    # check left_size is a integer or float
-    if left_size is not None and left_size_type not in [int, float]:
-        raise TypeError(
-            "Invalid `left_size` Type. Expected: int or float or None, "
-            f"Received: type(left_size)={left_size_type}.  "
-        )
-
-    # check right_size is a integer or float
-    if right_size is not None and right_size_type not in [int, float]:
+        # but preserve original error message behavior (first clause is compound error)
+        if (left_size is not None and left_size_type not in valid_types) and (
+            right_size is not None and right_size_type not in valid_types
+        ):
+            raise TypeError(
+                "Invalid `left_size` and `right_size` Types. Expected: "
+                "integer or float or None, Received: type(left_size)="
+                f"{left_size_type} and type(right_size)={right_size_type}"
+            )
+        if left_size is not None and left_size_type not in valid_types:
+            raise TypeError(
+                "Invalid `left_size` Type. Expected: int or float or None, "
+                f"Received: type(left_size)={left_size_type}.  "
+            )
+        # Must be right_size that is wrong
         raise TypeError(
             "Invalid `right_size` Type. "
             "Expected: int or float or None,"
@@ -545,54 +548,66 @@ def _rescale_dataset_split_sizes(left_size, right_size, total_length):
         )
 
     # check left_size is non-negative and less than 1 and less than total_length
-    if (
-        left_size_type is int
-        and (left_size <= 0 or left_size >= total_length)
-        or left_size_type is float
-        and (left_size <= 0 or left_size >= 1)
-    ):
-        raise ValueError(
-            "`left_size` should be either a positive integer "
-            f"smaller than {total_length}, or a float "
-            "within the range `[0, 1]`. Received: left_size="
-            f"{left_size}"
-        )
 
-    # check right_size is non-negative and less than 1 and less than
-    # total_length
-    if (
-        right_size_type is int
-        and (right_size <= 0 or right_size >= total_length)
-        or right_size_type is float
-        and (right_size <= 0 or right_size >= 1)
-    ):
-        raise ValueError(
-            "`right_size` should be either a positive integer "
-            f"and smaller than {total_length} or a float "
-            "within the range `[0, 1]`. Received: right_size="
-            f"{right_size}"
-        )
+    # Logic reorganized (same conditions, more cache-friendly checks):
+    if left_size is not None:
+        if (
+            left_size_type is int
+            and (left_size <= 0 or left_size >= total_length)
+        ) or (
+            left_size_type is float
+            and (left_size <= 0 or left_size >= 1)
+        ):
+            raise ValueError(
+                "`left_size` should be either a positive integer "
+                f"smaller than {total_length}, or a float "
+                "within the range `[0, 1]`. Received: left_size="
+                f"{left_size}"
+            )
+
+    if right_size is not None:
+        if (
+            right_size_type is int
+            and (right_size <= 0 or right_size >= total_length)
+        ) or (
+            right_size_type is float
+            and (right_size <= 0 or right_size >= 1)
+        ):
+            raise ValueError(
+                "`right_size` should be either a positive integer "
+                f"and smaller than {total_length} or a float "
+                "within the range `[0, 1]`. Received: right_size="
+                f"{right_size}"
+            )
 
     # check sum of left_size and right_size is less than or equal to
-    # total_length
+    # total_length; avoid repeated type check by merging conditions
     if (
-        right_size_type is left_size_type is float
-        and right_size + left_size > 1
+        left_size_type is float
+        and right_size_type is float
+        and left_size + right_size > 1
     ):
         raise ValueError(
             "The sum of `left_size` and `right_size` is greater "
             "than 1. It must be less than or equal to 1."
         )
 
-    if left_size_type is float:
-        left_size = round(left_size * total_length)
-    elif left_size_type is int:
-        left_size = float(left_size)
+    # Calculate int sizes in one pass, defer right_size=None or left_size=None handling until after
+    # Also avoid unnecessary float conversion if possible
+    orig_left_size = left_size
+    orig_right_size = right_size
+    if left_size is not None:
+        if left_size_type is float:
+            left_size = round(left_size * total_length)
+        else:  # int stays unchanged
+            pass
+    if right_size is not None:
+        if right_size_type is float:
+            right_size = round(right_size * total_length)
+        else:
+            pass
 
-    if right_size_type is float:
-        right_size = round(right_size * total_length)
-    elif right_size_type is int:
-        right_size = float(right_size)
+    # Now resolve the None case
 
     if left_size is None:
         left_size = total_length - right_size
@@ -607,17 +622,24 @@ def _rescale_dataset_split_sizes(left_size, right_size, total_length):
             f"and total_length = {total_length}"
         )
 
-    for split, side in [(left_size, "left"), (right_size, "right")]:
-        if split == 0:
-            raise ValueError(
-                f"With `dataset` of length={total_length}, `left_size`="
-                f"{left_size} and `right_size`={right_size}."
-                f"Resulting {side} side dataset split will be empty. "
-                "Adjust any of the aforementioned parameters"
-            )
+    # Avoid for loop when checking for splits of size 0; direct checks are fastest
+    if left_size == 0:
+        raise ValueError(
+            f"With `dataset` of length={total_length}, `left_size`="
+            f"{left_size} and `right_size`={right_size}."
+            "Resulting left side dataset split will be empty. "
+            "Adjust any of the aforementioned parameters"
+        )
+    if right_size == 0:
+        raise ValueError(
+            f"With `dataset` of length={total_length}, `left_size`="
+            f"{left_size} and `right_size`={right_size}."
+            "Resulting right side dataset split will be empty. "
+            "Adjust any of the aforementioned parameters"
+        )
 
-    left_size, right_size = int(left_size), int(right_size)
-    return left_size, right_size
+    # Output must be ints. Jump straight to int conversion.
+    return int(left_size), int(right_size)
 
 
 def _restore_dataset_from_list(
