@@ -253,6 +253,18 @@ class Tokenizer:
             )
 
         x = np.zeros((len(sequences), num_words))
+
+        # precompute idf for tfidf mode only (to avoid repeated log calls)
+        idf_cache = None
+        if mode == "tfidf":
+            # Avoid repeatedly calling log and get for the same index
+            # +1 in numerator as per original implementation
+            doc_count = self.document_count
+            index_docs_get = self.index_docs.get
+            # Pre-fill idf values for all potentially encountered indexes up to num_words
+            idf_cache = np.log(
+                1 + doc_count / (1 + np.array([index_docs_get(j, 0) for j in range(num_words)]))
+            )
         for i, seq in enumerate(sequences):
             if not seq:
                 continue
@@ -261,24 +273,29 @@ class Tokenizer:
                 if j >= num_words:
                     continue
                 counts[j] += 1
-            for j, c in list(counts.items()):
-                if mode == "count":
-                    x[i][j] = c
-                elif mode == "freq":
-                    x[i][j] = c / len(seq)
-                elif mode == "binary":
-                    x[i][j] = 1
-                elif mode == "tfidf":
+            if mode == "binary":
+                # For "binary", faster set logic avoids dict iteration
+                # Use NumPy advanced indexing for assignment
+                x[i, list(counts.keys())] = 1
+            elif mode == "count":
+                for j, c in counts.items():
+                    x[i, j] = c
+            elif mode == "freq":
+                seq_len = len(seq)
+                for j, c in counts.items():
+                    x[i, j] = c / seq_len
+            elif mode == "tfidf":
+                for j, c in counts.items():
                     # Use weighting scheme 2 in
                     # https://en.wikipedia.org/wiki/Tf%E2%80%93idf
                     tf = 1 + np.log(c)
-                    idf = np.log(
-                        1
-                        + self.document_count / (1 + self.index_docs.get(j, 0))
+                    # use precomputed idf for j if available, else compute as before
+                    idf = idf_cache[j] if j < num_words else np.log(
+                        1 + self.document_count / (1 + self.index_docs.get(j, 0))
                     )
-                    x[i][j] = tf * idf
-                else:
-                    raise ValueError("Unknown vectorization mode:", mode)
+                    x[i, j] = tf * idf
+            else:
+                raise ValueError("Unknown vectorization mode:", mode)
         return x
 
     def get_config(self):
