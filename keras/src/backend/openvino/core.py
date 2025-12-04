@@ -19,6 +19,8 @@ from keras.src.backend.common.dtypes import result_type
 from keras.src.backend.common.keras_tensor import KerasTensor
 from keras.src.backend.common.stateless_scope import StatelessScope
 
+NP_BFLOAT16 = np.dtype("bfloat16")
+
 SUPPORTS_SPARSE_TENSORS = False
 SUPPORTS_RAGGED_TENSORS = False
 IS_THREAD_SAFE = True
@@ -97,41 +99,42 @@ def align_operand_types(x1, x2, op_name):
 # create ov.Output (symbolic OpenVINO tensor)
 # for different input `x`
 def get_ov_output(x, ov_type=None):
-    if isinstance(x, float):
-        if ov_type is None:
-            ov_type = Type.f32
-        x = ov_opset.constant(x, ov_type).output(0)
-    elif isinstance(x, int):
-        if ov_type is None:
-            ov_type = Type.i32
-        x = ov_opset.constant(x, ov_type).output(0)
-    elif isinstance(x, np.ndarray):
-        if x.dtype == np.dtype("bfloat16"):
-            x = ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
-        else:
-            x = ov_opset.constant(x).output(0)
-    elif isinstance(x, (list, tuple)):
-        if isinstance(x, tuple):
-            x = list(x)
-        if ov_type is None:
-            x = ov_opset.constant(x).output(0)
-        else:
-            x = ov_opset.constant(x, ov_type).output(0)
-    elif np.isscalar(x):
-        x = ov_opset.constant(x).output(0)
-    elif isinstance(x, KerasVariable):
+    # Early fast-path for OpenVINO tensor wrappers
+    if isinstance(x, KerasVariable):
         if isinstance(x.value, OpenVINOKerasTensor):
             return x.value.output
-        x = ov_opset.constant(x.value.data).output(0)
+        # fall through in case wrapped value isn't OpenVINOKerasTensor
+        x = x.value.data
     elif isinstance(x, OpenVINOKerasTensor):
-        x = x.output
+        return x.output
     elif isinstance(x, Tensor):
-        x = ov_opset.constant(x.data).output(0)
+        return ov_opset.constant(x.data).output(0)
+
+    if isinstance(x, float):
+        dtype = ov_type if ov_type is not None else Type.f32
+        return ov_opset.constant(x, dtype).output(0)
+    elif isinstance(x, int):
+        dtype = ov_type if ov_type is not None else Type.i32
+        return ov_opset.constant(x, dtype).output(0)
+    elif isinstance(x, np.ndarray):
+        # Fast path for bfloat16 np.ndarray
+        if x.dtype is NP_BFLOAT16:
+            return ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
+        return ov_opset.constant(x).output(0)
+    elif isinstance(x, (list, tuple)):
+        in_list = x if isinstance(x, list) else list(x)
+        # Always use ov_type if provided; default lets ov_opset.constant infer
+        if ov_type is not None:
+            return ov_opset.constant(in_list, ov_type).output(0)
+        else:
+            return ov_opset.constant(in_list).output(0)
+    elif np.isscalar(x):
+        # fallback for all numeric scalars not previously matched
+        return ov_opset.constant(x).output(0)
     else:
         raise ValueError(
             "unsupported type of `x` to create ov.Output: {}".format(type(x))
         )
-    return x
 
 
 # wrapper for OpenVINO symbolic tensor ov.Output

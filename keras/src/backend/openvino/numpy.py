@@ -16,6 +16,8 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_const_two_cache = {}
+
 
 def add(x1, x2):
     element_type = None
@@ -2462,8 +2464,9 @@ def var(x, axis=None, keepdims=False):
     x_type = x.get_element_type()
     x, axis = _resolve_axis(x, axis)
 
-    work_dtype = Type.f64 if x_type.is_integral() else x.get_element_type()
-    if x_type.is_integral():
+    is_integral = x_type.is_integral()
+    work_dtype = Type.f64 if is_integral else x_type
+    if is_integral:
         x = ov_opset.convert(x, work_dtype).output(0)
     if axis is None:
         const_zero = ov_opset.constant(0, dtype=work_dtype).output(0)
@@ -2473,7 +2476,8 @@ def var(x, axis=None, keepdims=False):
     # The variance is computed using $Var = E[|x|^2] - |E[x]|^2$, It is faster
     # but less numerically stable.
     mean = ov_opset.reduce_mean(x, axis, keepdims).output(0)
-    const_two = ov_opset.constant(2, work_dtype).output(0)
+    const_two = _get_const_two(work_dtype)
+
 
     squared_x = ov_opset.power(x, const_two).output(0)
     squared_mean = ov_opset.power(mean, const_two).output(0)
@@ -2550,3 +2554,10 @@ def argpartition(x, kth, axis=-1):
     raise NotImplementedError(
         "`argpartition` is not supported with openvino backend"
     )
+
+def _get_const_two(dtype):
+    cached = _const_two_cache.get(dtype)
+    if cached is None:
+        cached = ov_opset.constant(2, dtype).output(0)
+        _const_two_cache[dtype] = cached
+    return cached
