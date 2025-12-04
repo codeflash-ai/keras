@@ -97,41 +97,46 @@ def align_operand_types(x1, x2, op_name):
 # create ov.Output (symbolic OpenVINO tensor)
 # for different input `x`
 def get_ov_output(x, ov_type=None):
+    # Fast path for exact OpenVINOKerasTensor object (preserves indentation and logic)
+    if isinstance(x, KerasVariable) and isinstance(
+        x.value, OpenVINOKerasTensor
+    ):
+        return x.value.output
+
     if isinstance(x, float):
         if ov_type is None:
             ov_type = Type.f32
-        x = ov_opset.constant(x, ov_type).output(0)
-    elif isinstance(x, int):
+        return ov_opset.constant(x, ov_type).output(0)
+    if isinstance(x, int):
         if ov_type is None:
             ov_type = Type.i32
-        x = ov_opset.constant(x, ov_type).output(0)
-    elif isinstance(x, np.ndarray):
+        return ov_opset.constant(x, ov_type).output(0)
+    if isinstance(x, np.ndarray):
         if x.dtype == np.dtype("bfloat16"):
-            x = ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
+            return ov_opset.constant(x, OPENVINO_DTYPES["bfloat16"]).output(0)
         else:
-            x = ov_opset.constant(x).output(0)
-    elif isinstance(x, (list, tuple)):
+            return ov_opset.constant(x).output(0)
+    if isinstance(x, (list, tuple)):
+        # convert tuple to list immediately, only once
         if isinstance(x, tuple):
             x = list(x)
         if ov_type is None:
-            x = ov_opset.constant(x).output(0)
+            return ov_opset.constant(x).output(0)
         else:
-            x = ov_opset.constant(x, ov_type).output(0)
-    elif np.isscalar(x):
-        x = ov_opset.constant(x).output(0)
-    elif isinstance(x, KerasVariable):
-        if isinstance(x.value, OpenVINOKerasTensor):
-            return x.value.output
-        x = ov_opset.constant(x.value.data).output(0)
-    elif isinstance(x, OpenVINOKerasTensor):
-        x = x.output
-    elif isinstance(x, Tensor):
-        x = ov_opset.constant(x.data).output(0)
-    else:
-        raise ValueError(
-            "unsupported type of `x` to create ov.Output: {}".format(type(x))
-        )
-    return x
+            return ov_opset.constant(x, ov_type).output(0)
+    if np.isscalar(x):
+        return ov_opset.constant(x).output(0)
+    if isinstance(x, KerasVariable):
+        # KerasVariable with other x.value cases
+        return ov_opset.constant(x.value.data).output(0)
+    if isinstance(x, OpenVINOKerasTensor):
+        return x.output
+    if isinstance(x, Tensor):
+        return ov_opset.constant(x.data).output(0)
+
+    raise ValueError(
+        "unsupported type of `x` to create ov.Output: {}".format(type(x))
+    )
 
 
 # wrapper for OpenVINO symbolic tensor ov.Output

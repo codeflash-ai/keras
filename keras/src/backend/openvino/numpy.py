@@ -783,28 +783,29 @@ def diff(a, n=1, axis=-1):
     if axis < 0:
         axis = axis + rank
     result = a
+
+    # Preallocate arrays that are reused in each diff iteration
+    ones_rank = np.ones(rank, dtype=np.int64)
+    zeros_rank = np.zeros(rank, dtype=np.int64)
+
+    strides_const = ov_opset.constant(ones_rank, Type.i64).output(0)
+    zeros_const = ov_opset.constant(zeros_rank, Type.i64).output(0)
+
     for _ in range(n):
         rank = result.get_partial_shape().rank.get_length()
-        strides = ov_opset.constant(
-            np.array([1] * rank, dtype=np.int64), Type.i64
-        ).output(0)
 
         begin_upper_list = [0] * rank
         begin_upper_list[axis] = 1
-        begin_upper = ov_opset.constant(
-            np.array(begin_upper_list, dtype=np.int64), Type.i64
-        ).output(0)
-        end_upper = ov_opset.constant(
-            np.array([0] * rank, dtype=np.int64), Type.i64
-        ).output(0)
+        begin_upper_const = ov_opset.constant(np.array(begin_upper_list, dtype=np.int64), Type.i64).output(0)
+
         begin_mask_upper = [1] * rank
         begin_mask_upper[axis] = 0
         end_mask_upper = [1] * rank
         upper = ov_opset.strided_slice(
             data=result,
-            begin=begin_upper,
-            end=end_upper,
-            strides=strides,
+            begin=begin_upper_const,
+            end=zeros_const,
+            strides=strides_const,
             begin_mask=begin_mask_upper,
             end_mask=end_mask_upper,
             new_axis_mask=[],
@@ -812,22 +813,18 @@ def diff(a, n=1, axis=-1):
             ellipsis_mask=[],
         ).output(0)
 
-        begin_lower = ov_opset.constant(
-            np.array([0] * rank, dtype=np.int64), Type.i64
-        ).output(0)
+        begin_lower_const = zeros_const
         end_lower_list = [0] * rank
         end_lower_list[axis] = -1
-        end_lower = ov_opset.constant(
-            np.array(end_lower_list, dtype=np.int64), Type.i64
-        ).output(0)
+        end_lower_const = ov_opset.constant(np.array(end_lower_list, dtype=np.int64), Type.i64).output(0)
         begin_mask_lower = [1] * rank
         end_mask_lower = [1] * rank
         end_mask_lower[axis] = 0
         lower = ov_opset.strided_slice(
             data=result,
-            begin=begin_lower,
-            end=end_lower,
-            strides=strides,
+            begin=begin_lower_const,
+            end=end_lower_const,
+            strides=strides_const,
             begin_mask=begin_mask_lower,
             end_mask=end_mask_lower,
             new_axis_mask=[],
