@@ -16,6 +16,10 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_MINUS_ONE_TENSOR = ov_opset.constant([-1], Type.i32).output(0)
+
+_CONSTANT_ZERO_I32 = ov_opset.constant(0, Type.i32).output(0)
+
 
 def add(x1, x2):
     element_type = None
@@ -476,8 +480,8 @@ def argsort(x, axis=-1):
     if rank == 0:
         return OpenVINOKerasTensor(ov_opset.constant([0], Type.i32).output(0))
     if axis is None:
-        flatten_shape = ov_opset.constant([-1], Type.i32).output(0)
-        x = ov_opset.reshape(x, flatten_shape, False).output(0)
+        # Axis None: flatten, then sort
+        x = ov_opset.reshape(x, _MINUS_ONE_TENSOR, False).output(0)
         x_shape_tensor = ov_opset.shape_of(x, Type.i32).output(0)
         k = ov_opset.reduce_prod(
             x_shape_tensor, ov_opset.constant([0], Type.i32), keep_dims=False
@@ -485,12 +489,12 @@ def argsort(x, axis=-1):
         axis = 0
     else:
         if axis < 0:
-            axis = rank + axis
+            axis += rank
         x_shape_tensor = ov_opset.shape_of(x, Type.i32).output(0)
         k = ov_opset.gather(
             x_shape_tensor,
             ov_opset.constant(axis, Type.i32).output(0),
-            ov_opset.constant(0, Type.i32).output(0),
+            _CONSTANT_ZERO_I32,
         ).output(0)
     sorted_indices = ov_opset.topk(
         x,
