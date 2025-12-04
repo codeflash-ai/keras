@@ -80,8 +80,13 @@ def _to_backend_layout(tensor_layout):
             "TensorLayout."
         )
 
-    sharding_specs = [
-        axis if axis else dtensor.UNSHARDED for axis in tensor_layout.axes
-    ]
+    axes = tensor_layout.axes
+    unsharded = dtensor.UNSHARDED
+
+    if all(axes):
+        sharding_specs = list(axes)
+    else:
+        sharding_specs = [axis if axis else unsharded for axis in axes]
+
     dtensor_mesh = tensor_layout.device_mesh.backend_mesh
     return dtensor.Layout(sharding_specs=sharding_specs, mesh=dtensor_mesh)
