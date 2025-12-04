@@ -16,6 +16,8 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_flatten_shape = ov_opset.constant([-1], Type.i32).output(0)
+
 
 def add(x1, x2):
     element_type = None
@@ -248,8 +250,7 @@ def _resolve_axis(x, axis):
     if axis == () or axis == []:
         return x, None
     if axis is None:
-        flatten_shape = ov_opset.constant([-1], Type.i32).output(0)
-        x = ov_opset.reshape(x, flatten_shape, False).output(0)
+        x = ov_opset.reshape(x, _flatten_shape, False).output(0)
         axis = 0
     if isinstance(axis, tuple):
         axis = list(axis)
