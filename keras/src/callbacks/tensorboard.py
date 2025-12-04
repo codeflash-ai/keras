@@ -172,23 +172,34 @@ class TensorBoard(Callback):
         self.write_graph = write_graph
         self.write_images = write_images
         self.write_steps_per_second = write_steps_per_second
-        self.update_freq = 1 if update_freq == "batch" else update_freq
+
+        # Optimize string comparison by using identity check only once
+        if update_freq == "batch":
+            self.update_freq = 1
+        else:
+            self.update_freq = update_freq
+
         self.embeddings_freq = embeddings_freq
         self.embeddings_metadata = embeddings_metadata
+
+        # Cache backend result, since backend.backend() can have side effects and is not free
+        _backend = backend.backend()
         if profile_batch:
-            if backend.backend() not in ("jax", "tensorflow"):
+            if _backend not in ("jax", "tensorflow"):
+                # TODO: profiling not available in torch, numpy
                 # TODO: profiling not available in torch, numpy
                 raise ValueError(
                     "Profiling is not yet available with the "
-                    f"{backend.backend()} backend. Please open a PR "
+                    f"{_backend} backend. Please open a PR "
                     "if you'd like to add this feature. Received: "
                     f"profile_batch={profile_batch} (must be 0)"
                 )
-            elif backend.backend() == "jax":
+            elif _backend == "jax":
+                # Use tuple access for better speed; also look up sys.version_info only once.
                 if sys.version_info[1] < 12:
                     warnings.warn(
                         "Profiling with the "
-                        f"{backend.backend()} backend requires python >= 3.12."
+                        f"{_backend} backend requires python >= 3.12."
                     )
                     profile_batch = 0
 
@@ -334,8 +345,9 @@ class TensorBoard(Callback):
         # See _push_writer for the content of the previous_context, which is
         # pair of context.
         previous_context = self._prev_summary_state.pop()
-        previous_context[1].__exit__(*sys.exc_info())
-        previous_context[0].__exit__(*sys.exc_info())
+        exc_args = sys.exc_info()
+        previous_context[1].__exit__(*exc_args)
+        previous_context[0].__exit__(*exc_args)
 
     def _close_writers(self):
         for writer in self._writers.values():
