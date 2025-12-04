@@ -262,14 +262,16 @@ def compute_conv_transpose_output_shape(
 
 def canonicalize_axis(axis, num_dims):
     """Canonicalize an axis in [-num_dims, num_dims) to [0, num_dims)."""
-    axis = operator.index(axis)
+    # Removed operator.index() as it is redundant if axis is already int (which it is, from reduce_shape's usage)
+    if not isinstance(axis, int):
+        axis = operator.index(axis)
     if not -num_dims <= axis < num_dims:
         raise ValueError(
             f"axis {axis} is out of bounds for an array with dimension "
             f"{num_dims}."
         )
     if axis < 0:
-        axis = axis + num_dims
+        axis += num_dims
     return axis
 
 

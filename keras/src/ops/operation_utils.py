@@ -369,23 +369,28 @@ def compute_take_along_axis_output_shape(input_shape, indices_shape, axis):
 
 
 def reduce_shape(shape, axis=None, keepdims=False):
-    shape = list(shape)
+    len_shape = len(shape)
+
     if axis is None:
         if keepdims:
-            return tuple([1 for _ in shape])
+            return (1,) * len_shape
         else:
-            return tuple([])
+            return ()
     elif isinstance(axis, int):
         axis = (axis,)
 
-    axis = tuple(canonicalize_axis(a, len(shape)) for a in axis)
+    # Tuple here triggers generator expression once, not multiple times as in usage below.
+    canonical_axes = tuple(canonicalize_axis(a, len_shape) for a in axis)
+
+    shape = list(shape)  # Only create a list when axis is not None!
 
     if keepdims:
-        for ax in axis:
+        for ax in canonical_axes:
             shape[ax] = 1
         return tuple(shape)
     else:
-        for ax in sorted(axis, reverse=True):
+        # Use reverse sorted to avoid index shifts
+        for ax in sorted(canonical_axes, reverse=True):
             del shape[ax]
         return tuple(shape)
 
