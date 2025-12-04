@@ -33,19 +33,20 @@ def broadcast_shapes(shape1, shape2):
         shape2 = [1] * (len(shape1) - len(shape2)) + shape2
     if len(shape1) < len(shape2):
         shape1 = [1] * (len(shape2) - len(shape1)) + shape1
-    output_shape = list(shape1)
-    for i in range(len(shape1)):
-        if shape1[i] == 1:
-            output_shape[i] = shape2[i]
-        elif shape1[i] is None:
-            output_shape[i] = None if shape2[i] == 1 else shape2[i]
+    
+    output_shape = []
+    for s1, s2 in zip(shape1, shape2):
+        if s1 == 1:
+            output_shape.append(s2)
+        elif s1 is None:
+            output_shape.append(None if s2 == 1 else s2)
         else:
-            if shape2[i] == 1 or shape2[i] is None or shape2[i] == shape1[i]:
-                output_shape[i] = shape1[i]
+            if s2 == 1 or s2 is None or s2 == s1:
+                output_shape.append(s1)
             else:
                 raise ValueError(
                     "Cannot broadcast shape, the failure dim has value "
-                    f"{shape1[i]}, which cannot be broadcasted to {shape2[i]}. "
+                    f"{s1}, which cannot be broadcasted to {s2}. "
                     f"Input shapes are: {origin_shape1} and {origin_shape2}."
                 )
 
