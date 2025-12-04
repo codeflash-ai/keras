@@ -2230,37 +2230,73 @@ def tri(N, M=None, k=0, dtype=None):
 
     ov_dtype = OPENVINO_DTYPES[dtype]
 
+
+    # Optimize ensure_constant function by handling common int/float case in fast path,
+    # and creating constant arrays outside repeatedly used ops.
+    _const_cache = {}
+
     def ensure_constant(value, default_type=Type.i32):
-        if isinstance(value, (int, float)):
-            return ov_opset.constant(value, default_type)
+        # Fast path for int, the most common usage
+        if isinstance(value, int):
+            # Cache integer constants of common types to avoid Python->C++ conversions
+            key = (value, default_type)
+            if key not in _const_cache:
+                _const_cache[key] = ov_opset.constant(value, default_type)
+            return _const_cache[key]
+        elif isinstance(value, float):
+            key = (value, default_type)
+            if key not in _const_cache:
+                _const_cache[key] = ov_opset.constant(value, default_type)
+            return _const_cache[key]
+        # Handle tensors from OpenVINO graph
         elif hasattr(value, "get_element_type"):
             if value.get_element_type() != Type.i32:
                 value = ov_opset.convert(value, Type.i32)
-            return ov_opset.squeeze(value, ov_opset.constant([0], Type.i32))
+            # Squeeze index 0 for all possible cases
+            if (0,) not in _const_cache:
+                _const_cache[(0,)] = ov_opset.constant([0], Type.i32)
+            return ov_opset.squeeze(value, _const_cache[(0,)])
+        # Fallback for other types
         else:
-            return ov_opset.constant(value, default_type)
+            key = (value, default_type)
+            if key not in _const_cache:
+                _const_cache[key] = ov_opset.constant(value, default_type)
+            return _const_cache[key]
+
 
     N_const = ensure_constant(N)
     M_const = ensure_constant(M)
     k_const = ensure_constant(k)
 
     # Create row and column indices
+
+    # Cache common constants as OpenVINO ops; reuse for faster kernel setup
+    # These arrays are used repeatedly for unsqueeze and range step
+    if (1,) not in _const_cache:
+        _const_cache[(1,)] = ov_opset.constant([1], Type.i32)
+    if (0,) not in _const_cache:
+        _const_cache[(0,)] = ov_opset.constant([0], Type.i32)
+    step_const = ensure_constant(1, Type.i32)
+    zero_const = ensure_constant(0, Type.i32)
+
     row_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
+        zero_const,
         N_const,
-        ov_opset.constant(1, Type.i32),
+        step_const,
         output_type=Type.i32,
     )
     col_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
+        zero_const,
         M_const,
-        ov_opset.constant(1, Type.i32),
+        step_const,
         output_type=Type.i32,
     )
 
-    # Reshape indices for broadcasting
-    row_idx = ov_opset.unsqueeze(row_range, ov_opset.constant([1], Type.i32))
-    col_idx = ov_opset.unsqueeze(col_range, ov_opset.constant([0], Type.i32))
+    # Reshape indices for broadcasting; fully reuse _const_cache for constant axes
+    row_idx = ov_opset.unsqueeze(row_range, _const_cache[(1,)])
+    col_idx = ov_opset.unsqueeze(col_range, _const_cache[(0,)])
+
+    # Compute mask, avoiding extra Python calls
 
     mask = ov_opset.less_equal(col_idx, ov_opset.add(row_idx, k_const))
 
