@@ -256,16 +256,25 @@ class Tokenizer:
         for i, seq in enumerate(sequences):
             if not seq:
                 continue
-            counts = collections.defaultdict(int)
+
+            # Count valid indices in a single tight loop, using pure Python dict as it's faster than defaultdict
+            # for dense keys, avoid 'if j >= num_words' every time via a mask
+            counts = {}
             for j in seq:
                 if j >= num_words:
                     continue
-                counts[j] += 1
-            for j, c in list(counts.items()):
+                if j in counts:
+                    counts[j] += 1
+                else:
+                    counts[j] = 1
+
+            # Now iterate only existing keys
+            seq_len = len(seq)
+            for j, c in counts.items():
                 if mode == "count":
                     x[i][j] = c
                 elif mode == "freq":
-                    x[i][j] = c / len(seq)
+                    x[i][j] = c / seq_len
                 elif mode == "binary":
                     x[i][j] = 1
                 elif mode == "tfidf":
