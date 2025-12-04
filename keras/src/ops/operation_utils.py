@@ -403,6 +403,18 @@ def get_source_inputs(tensor):
     Returns:
         List of input tensors.
     """
+    return _get_source_inputs(tensor, _seen_ids=None)
+
+def _get_source_inputs(tensor, _seen_ids):
+    if _seen_ids is None:
+        _seen_ids = set()
+
+    tid = id(tensor)
+    if tid in _seen_ids:
+        # This tensor has already been processed, skip to avoid duplication
+        return []
+    _seen_ids.add(tid)
+
     if not hasattr(tensor, "_keras_history"):
         return tensor
 
@@ -416,10 +428,12 @@ def get_source_inputs(tensor):
             return tree.flatten(node.output_tensors)
         else:
             source_tensors = []
-            for tensor in node.input_tensors:
-                previous_sources = get_source_inputs(tensor)
+            for input_tensor in node.input_tensors:
+                previous_sources = _get_source_inputs(input_tensor, _seen_ids)
                 # Avoid input redundancy.
                 for x in previous_sources:
-                    if all(x is not t for t in source_tensors):
+                    xid = id(x)
+                    if xid not in _seen_ids:
+                        _seen_ids.add(xid)
                         source_tensors.append(x)
             return source_tensors
