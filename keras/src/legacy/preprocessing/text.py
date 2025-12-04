@@ -21,12 +21,15 @@ def text_to_word_sequence(
     if lower:
         input_text = input_text.lower()
 
-    translate_dict = {c: split for c in filters}
-    translate_map = str.maketrans(translate_dict)
-    input_text = input_text.translate(translate_map)
+    if filters:
+        translate_map = str.maketrans({c: split for c in filters})
+        input_text = input_text.translate(translate_map)
 
-    seq = input_text.split(split)
-    return [i for i in seq if i]
+    if split == " ":
+        return input_text.split()
+    else:
+        seq = input_text.split(split)
+        return [i for i in seq if i]
 
 
 @keras_export("keras._legacy.preprocessing.text.one_hot")
