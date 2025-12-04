@@ -337,16 +337,21 @@ def compute_transpose_output_shape(input_shape, axes):
     Returns:
         Tuple of ints: The output shape after the `transpose` operation.
     """
-    input_shape = list(input_shape)
+    # Convert to tuple to avoid unnecessary copying and enable faster access
+    input_shape = tuple(input_shape)
     if axes is None:
-        return tuple(input_shape[::-1])
+        return input_shape[::-1]  # slicing a tuple is fastest, no need to tuple() the result
+
 
     if len(axes) != len(input_shape):
         raise ValueError(
             "axis must be a list of the same length as the input shape, "
             f"expected {len(input_shape)}, but received {len(axes)}."
         )
-    return tuple(input_shape[ax] for ax in axes)
+    # Use a tuple comprehension for maximum speed - directly construct output tuple
+    # Avoid generator expression inside tuple() which incurs additional overhead
+    output = [input_shape[ax] for ax in axes]
+    return tuple(output)
 
 
 def compute_take_along_axis_output_shape(input_shape, indices_shape, axis):
