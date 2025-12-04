@@ -16,6 +16,18 @@ from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
 
+_CONST_ZERO = ov_opset.constant(0, Type.i32)
+
+_CONST_ONE = ov_opset.constant(1, Type.i32)
+
+_CONST_MINUS2 = ov_opset.constant([-2], Type.i32)
+
+_CONST_MINUS1 = ov_opset.constant([-1], Type.i32)
+
+_CONST_AXIS0 = ov_opset.constant([0], Type.i32)
+
+_CONST_AXIS1 = ov_opset.constant([1], Type.i32)
+
 
 def add(x1, x2):
     element_type = None
@@ -2230,37 +2242,24 @@ def tri(N, M=None, k=0, dtype=None):
 
     ov_dtype = OPENVINO_DTYPES[dtype]
 
-    def ensure_constant(value, default_type=Type.i32):
-        if isinstance(value, (int, float)):
-            return ov_opset.constant(value, default_type)
-        elif hasattr(value, "get_element_type"):
-            if value.get_element_type() != Type.i32:
-                value = ov_opset.convert(value, Type.i32)
-            return ov_opset.squeeze(value, ov_opset.constant([0], Type.i32))
-        else:
-            return ov_opset.constant(value, default_type)
+    N_const = _ensure_constant(N)
+    M_const = _ensure_constant(M)
+    k_const = _ensure_constant(k)
 
-    N_const = ensure_constant(N)
-    M_const = ensure_constant(M)
-    k_const = ensure_constant(k)
+    # Create row and column indices, reusing cached zeros/ones
 
     # Create row and column indices
     row_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
-        N_const,
-        ov_opset.constant(1, Type.i32),
-        output_type=Type.i32,
+        _CONST_ZERO, N_const, _CONST_ONE, output_type=Type.i32,
     )
     col_range = ov_opset.range(
-        ov_opset.constant(0, Type.i32),
-        M_const,
-        ov_opset.constant(1, Type.i32),
-        output_type=Type.i32,
+        _CONST_ZERO, M_const, _CONST_ONE, output_type=Type.i32,
     )
 
-    # Reshape indices for broadcasting
-    row_idx = ov_opset.unsqueeze(row_range, ov_opset.constant([1], Type.i32))
-    col_idx = ov_opset.unsqueeze(col_range, ov_opset.constant([0], Type.i32))
+    # Reshape indices for broadcasting using cached axis constants
+    row_idx = ov_opset.unsqueeze(row_range, _CONST_AXIS1)
+    col_idx = ov_opset.unsqueeze(col_range, _CONST_AXIS0)
+
 
     mask = ov_opset.less_equal(col_idx, ov_opset.add(row_idx, k_const))
 
@@ -2276,9 +2275,10 @@ def tril(x, k=0):
     x = get_ov_output(x)
     ov_type = x.get_element_type()
     shape = ov_opset.shape_of(x, Type.i32)
-    zero_const = ov_opset.constant(0, Type.i32)
-    minus2 = ov_opset.constant([-2], Type.i32)
-    minus1 = ov_opset.constant([-1], Type.i32)
+    # Use cached constants for efficiency
+    zero_const = _CONST_ZERO
+    minus2 = _CONST_MINUS2
+    minus1 = _CONST_MINUS1
     M = ov_opset.squeeze(ov_opset.gather(shape, minus2, zero_const), zero_const)
     N = ov_opset.squeeze(ov_opset.gather(shape, minus1, zero_const), zero_const)
     tri_mask = tri(M, N, k=k, dtype="bool").output
@@ -2550,3 +2550,23 @@ def argpartition(x, kth, axis=-1):
     raise NotImplementedError(
         "`argpartition` is not supported with openvino backend"
     )
+
+def _ensure_constant(value, default_type=Type.i32):
+    # Avoid unnecessary OpenVINO graph ops by reusing singletons for common values
+    # Handles Python int, float, OpenVINO dynamic inputs
+    if isinstance(value, int):
+        if value == 0 and default_type == Type.i32:
+            return _CONST_ZERO
+        if value == 1 and default_type == Type.i32:
+            return _CONST_ONE
+        return ov_opset.constant(value, default_type)
+    elif isinstance(value, float):
+        return ov_opset.constant(value, default_type)
+    elif hasattr(value, "get_element_type"):
+        # value is likely an OpenVINO node
+        if value.get_element_type() != Type.i32:
+            value = ov_opset.convert(value, Type.i32)
+        return ov_opset.squeeze(value, _CONST_AXIS0)
+    else:
+        # For array-like or generic
+        return ov_opset.constant(value, default_type)
