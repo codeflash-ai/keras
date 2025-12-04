@@ -15,6 +15,7 @@ from keras.src.backend.openvino.core import (
 from keras.src.backend.openvino.core import convert_to_tensor
 from keras.src.backend.openvino.core import get_ov_output
 from keras.src.backend.openvino.core import ov_to_keras_type
+from functools import lru_cache
 
 
 def add(x1, x2):
@@ -585,30 +586,34 @@ def bincount(x, weights=None, minlength=0, sparse=False):
         raise ValueError("Unsupported value `sparse=True`")
     x = get_ov_output(x)
     x_type = x.get_element_type()
+
+    # Cache scalar constants by type (greatly reduces overhead)
+    const_minus_one = _ov_const(-1, x_type)
+    const_one = _ov_const(1, x_type)
+    const_zero = _ov_const(0, x_type)
+    scalar_shape = _ov_const_empty(x_type)
+
     shape_x = ov_opset.shape_of(x, "i64").output(0)
     rank_x = ov_opset.shape_of(shape_x, "i64").output(0)
     rank_x = ov_opset.convert(rank_x, x_type).output(0)
-    scalar_shape = ov_opset.constant([], x_type).output(0)
     rank_x = ov_opset.reshape(rank_x, scalar_shape, False).output(0)
-    const_minus_one = ov_opset.constant(-1, x_type).output(0)
     rank_minus_one = ov_opset.add(rank_x, const_minus_one).output(0)
-    minlength = get_ov_output(minlength)
-    minlength = ov_opset.convert(minlength, x_type).output(0)
-    const_one = ov_opset.constant(1, x_type).output(0)
-    const_zero = ov_opset.constant(0, x_type).output(0)
+
+    minlength_tensor = get_ov_output(minlength)
+    minlength_tensor = ov_opset.convert(minlength_tensor, x_type).output(0)
+
     max_element = ov_opset.reduce_max(x, const_zero, keep_dims=False).output(0)
     depth = ov_opset.add(max_element, const_one).output(0)
-    depth = ov_opset.maximum(depth, minlength).output(0)
-    depth_scalar = ov_opset.reduce_max(
-        depth, const_zero, keep_dims=False
-    ).output(0)
+    depth = ov_opset.maximum(depth, minlength_tensor).output(0)
+    depth_scalar = ov_opset.reduce_max(depth, const_zero, keep_dims=False).output(0)
+
     one_hot = ov_opset.one_hot(
         x, depth_scalar, const_one, const_zero, axis=-1
     ).output(0)
     if weights is not None:
-        weights = get_ov_output(weights)
-        weights_type = weights.get_element_type()
-        weights_new = ov_opset.reshape(weights, [-1, 1], False).output(0)
+        weights_tensor = get_ov_output(weights)
+        weights_type = weights_tensor.get_element_type()
+        weights_new = ov_opset.reshape(weights_tensor, [-1, 1], False).output(0)
         one_hot = ov_opset.convert(one_hot, weights_type).output(0)
         final_one_hot = ov_opset.multiply(one_hot, weights_new).output(0)
         final_output = ov_opset.reduce_sum(
@@ -2550,3 +2555,17 @@ def argpartition(x, kth, axis=-1):
     raise NotImplementedError(
         "`argpartition` is not supported with openvino backend"
     )
+
+
+# Cache frequently used OpenVINO constant outputs for scalar values and empty-shapes per type
+@lru_cache(maxsize=32)
+def _ov_const(val, dtype):
+    return ov_opset.constant(val, dtype).output(0)
+
+@lru_cache(maxsize=16)
+def _ov_const_notype(val):
+    return ov_opset.constant(val).output(0)
+
+@lru_cache(maxsize=32)
+def _ov_const_empty(dtype):
+    return ov_opset.constant([], dtype).output(0)

@@ -97,13 +97,9 @@ def align_operand_types(x1, x2, op_name):
 # create ov.Output (symbolic OpenVINO tensor)
 # for different input `x`
 def get_ov_output(x, ov_type=None):
-    if isinstance(x, float):
+    if isinstance(x, (float, int)):
         if ov_type is None:
-            ov_type = Type.f32
-        x = ov_opset.constant(x, ov_type).output(0)
-    elif isinstance(x, int):
-        if ov_type is None:
-            ov_type = Type.i32
+            ov_type = Type.f32 if isinstance(x, float) else Type.i32
         x = ov_opset.constant(x, ov_type).output(0)
     elif isinstance(x, np.ndarray):
         if x.dtype == np.dtype("bfloat16"):
