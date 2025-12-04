@@ -260,11 +260,11 @@ def _resolve_axis(x, axis):
 def _upcast_type_if_needed(x):
     x_type = x.get_element_type()
     if x_type == Type.boolean:
-        x = ov_opset.convert(x, Type.i32).output(0)
+        return ov_opset.convert(x, Type.i32).output(0)
     elif x_type in (Type.i8, Type.i16):
-        x = ov_opset.convert(x, Type.i32).output(0)
+        return ov_opset.convert(x, Type.i32).output(0)
     elif x_type in (Type.u8, Type.u16):
-        x = ov_opset.convert(x, Type.u32).output(0)
+        return ov_opset.convert(x, Type.u32).output(0)
     return x
 
 
