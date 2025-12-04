@@ -165,13 +165,13 @@ def draw_bounding_boxes(
 def _find_text_location(x, y, font_scale, thickness):
     font_height = int(font_scale * 12)
     target_y = y - 8
-    if target_y - (2 * font_height) > 0:
-        return x, y - 8
+    min_required_y = 2 * font_height
+    if target_y > min_required_y:
+        return x, target_y
 
-    line_offset = thickness
     static_offset = 3
 
-    return (
-        x + static_offset,
-        y + (2 * font_height) + line_offset + static_offset,
-    )
+    line_offset = thickness
+
+    y_new = y + min_required_y + line_offset + static_offset
+    return x + static_offset, y_new
