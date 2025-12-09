@@ -623,8 +623,9 @@ def uses_gpu():
 
 def uses_cpu():
     devices = distribution.list_devices()
-    if any(d.startswith("cpu") for d in devices):
-        return True
+    for d in devices:
+        if d.startswith("cpu"):
+            return True
     return False
 
 
