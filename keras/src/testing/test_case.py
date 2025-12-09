@@ -48,8 +48,16 @@ class TestCase(parameterized.TestCase, unittest.TestCase):
         np.testing.assert_allclose(x1, x2, atol=atol, rtol=rtol, err_msg=msg)
 
     def assertNotAllClose(self, x1, x2, atol=1e-6, rtol=1e-6, msg=None):
+        # Attempt to avoid calling assertAllClose if it's definitely not close
+        x1_is_nd = isinstance(x1, np.ndarray)
+        x2_is_nd = isinstance(x2, np.ndarray)
+        v1 = x1 if x1_is_nd else backend.convert_to_numpy(x1)
+        v2 = x2 if x2_is_nd else backend.convert_to_numpy(x2)
+        # Quick check: if shape is different, not all close
+        if v1.shape != v2.shape:
+            return
         try:
-            self.assertAllClose(x1, x2, atol=atol, rtol=rtol, msg=msg)
+            np.testing.assert_allclose(v1, v2, atol=atol, rtol=rtol, err_msg=msg)
         except AssertionError:
             return
         msg = msg or ""
