@@ -723,9 +723,16 @@ def create_eager_tensors(input_shape, dtype, sparse, ragged):
 
 
 def is_shape_tuple(x):
-    return isinstance(x, (list, tuple)) and all(
-        isinstance(e, (int, type(None))) for e in x
-    )
+    # Check if x is a list or tuple first to avoid iterating non-sequences
+    if not isinstance(x, (list, tuple)):
+        return False
+    # Save the isinstance tuple as a local, since it's used very frequently
+    int_or_none = (int, type(None))
+    # Use a for loop for early exit instead of all() generator expression
+    for e in x:
+        if not isinstance(e, int_or_none):
+            return False
+    return True
 
 
 def map_shape_dtype_structure(fn, shape, dtype):
