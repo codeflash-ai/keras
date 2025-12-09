@@ -723,28 +723,31 @@ def create_eager_tensors(input_shape, dtype, sparse, ragged):
 
 
 def is_shape_tuple(x):
-    return isinstance(x, (list, tuple)) and all(
-        isinstance(e, (int, type(None))) for e in x
-    )
+    if not isinstance(x, (list, tuple)):
+        return False
+    for e in x:
+        if not (type(e) is int or e is None):
+            return False
+    return True
 
 
 def map_shape_dtype_structure(fn, shape, dtype):
     """Variant of tree.map_structure that operates on shape tuples."""
+    # Avoid repeated isinstance calls for the same value
+    shape_type = type(shape)
     if is_shape_tuple(shape):
         return fn(tuple(shape), dtype)
-    if isinstance(shape, list):
-        return [
-            map_shape_dtype_structure(fn, s, d) for s, d in zip(shape, dtype)
-        ]
-    if isinstance(shape, tuple):
-        return tuple(
-            map_shape_dtype_structure(fn, s, d) for s, d in zip(shape, dtype)
-        )
-    if isinstance(shape, dict):
-        return {
-            k: map_shape_dtype_structure(fn, v, dtype[k])
-            for k, v in shape.items()
-        }
+    if shape_type is list:
+        # Avoid repeated zip calls by storing to local variable
+        zipped = zip(shape, dtype)
+        return [map_shape_dtype_structure(fn, s, d) for s, d in zipped]
+    if shape_type is tuple:
+        zipped = zip(shape, dtype)
+        return tuple(map_shape_dtype_structure(fn, s, d) for s, d in zipped)
+    if shape_type is dict:
+        # Use local binding for shape.items() to avoid repeated lookup
+        items = shape.items()
+        return {k: map_shape_dtype_structure(fn, v, dtype[k]) for k, v in items}
     else:
         raise ValueError(
             f"Cannot map function to unknown objects {shape} and {dtype}"
