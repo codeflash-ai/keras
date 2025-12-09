@@ -71,6 +71,9 @@ def jax_stateful_apply(params, state, inputs, training):
         state = state + 1
     return outputs, state
 
+def jax_fn(params, state, inputs):
+    return inputs, state
+
 
 if flax is not None:
 
@@ -179,6 +182,20 @@ if flax is not None:
         "FlaxDropoutModel": FlaxDropoutModel,
         "flax_dropout_wrapper": flax_dropout_wrapper,
     }
+
+@jax.tree_util.register_pytree_node_class
+class NamedPoint:
+    def __init__(self, x, y, name):
+        self.x = x
+        self.y = y
+        self.name = name
+
+    def tree_flatten(self):
+        return ((self.x, self.y), self.name)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children, aux_data)
 
 
 @pytest.mark.skipif(
@@ -644,23 +661,6 @@ class TestJaxLayer(testing.TestCase):
         # layer cannot be invoked as jax2tf will fail on strings
 
     def test_with_state_jax_registered_node_class(self):
-        @jax.tree_util.register_pytree_node_class
-        class NamedPoint:
-            def __init__(self, x, y, name):
-                self.x = x
-                self.y = y
-                self.name = name
-
-            def tree_flatten(self):
-                return ((self.x, self.y), self.name)
-
-            @classmethod
-            def tree_unflatten(cls, aux_data, children):
-                return cls(*children, aux_data)
-
-        def jax_fn(params, state, inputs):
-            return inputs, state
-
         layer = JaxLayer(jax_fn, state=[NamedPoint(1.0, 2.0, "foo")])
         layer(np.ones((1,)))
 
