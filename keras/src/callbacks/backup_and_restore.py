@@ -95,14 +95,17 @@ class BackupAndRestore(Callback):
         if not backup_dir:
             raise ValueError("Empty `backup_dir` argument passed")
         self.backup_dir = backup_dir
-        self._weights_path = file_utils.join(backup_dir, "latest.weights.h5")
-        self._training_metadata_path = file_utils.join(
-            backup_dir, "training_metadata.json"
-        )
-        self._prev_weights_path = f"{self._weights_path}.bkp"
-        self._prev_training_metadata_path = (
-            f"{self._training_metadata_path}.bkp"
-        )
+
+        # Localize paths as locals and assign in single statement for improved startup efficiency
+        backup_dir_local = backup_dir
+        join = file_utils.join
+        weights_path = join(backup_dir_local, "latest.weights.h5")
+        training_metadata_path = join(backup_dir_local, "training_metadata.json")
+        self._weights_path = weights_path
+        self._training_metadata_path = training_metadata_path
+        self._prev_weights_path = f"{weights_path}.bkp"
+        self._prev_training_metadata_path = f"{training_metadata_path}.bkp"
+
         if save_freq != "epoch" and not isinstance(save_freq, int):
             raise ValueError(
                 "Invalid value for argument `save_freq`. "
@@ -191,18 +194,21 @@ class BackupAndRestore(Callback):
 
     def _should_save_on_batch(self, batch):
         """Handles batch-level saving logic, supports steps_per_execution."""
-        if self.save_freq == "epoch":
+        save_freq = self.save_freq
+        if save_freq == "epoch":
             return False
-        if batch <= self._last_batch_seen:  # New epoch.
+        last_batch_seen = self._last_batch_seen
+        if batch <= last_batch_seen:  # New epoch.
             add_batches = batch + 1  # batches are zero-indexed.
         else:
-            add_batches = batch - self._last_batch_seen
-        self._batches_seen_since_last_saving += add_batches
-        self._last_batch_seen = batch
-
-        if self._batches_seen_since_last_saving >= self.save_freq:
+            add_batches = batch - last_batch_seen
+        batches_seen = self._batches_seen_since_last_saving + add_batches
+        if batches_seen >= save_freq:
             self._batches_seen_since_last_saving = 0
+            self._last_batch_seen = batch
             return True
+        self._batches_seen_since_last_saving = batches_seen
+        self._last_batch_seen = batch
         return False
 
     def on_train_end(self, logs=None):
