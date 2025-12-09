@@ -34,7 +34,7 @@ from keras.src.api_export import keras_export
 from keras.src.saving import object_registration
 from keras.src.saving import serialization_lib
 
-ALL_OBJECTS = {
+ALL_OBJECTS = (
     relu,
     leaky_relu,
     relu6,
@@ -65,7 +65,7 @@ ALL_OBJECTS = {
     log_softmax,
     log_sigmoid,
     sparsemax,
-}
+)
 
 ALL_OBJECTS_DICT = {fn.__name__: fn for fn in ALL_OBJECTS}
 # Additional aliases
