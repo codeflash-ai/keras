@@ -241,11 +241,13 @@ def serialize_keras_class_and_config(
     # already serialized this config. If so, just use that config. This will
     # store an extra ID field in the config, allowing us to re-create the shared
     # object relationship at load time.
-    if _shared_object_saving_scope() is not None and obj is not None:
-        shared_object_config = _shared_object_saving_scope().get_config(obj)
-        if shared_object_config is None:
-            return _shared_object_saving_scope().create_config(base_config, obj)
-        return shared_object_config
+    if obj is not None:
+        scope = _shared_object_saving_scope()
+        if scope is not None:
+            shared_object_config = scope.get_config(obj)
+            if shared_object_config is None:
+                return scope.create_config(base_config, obj)
+            return shared_object_config
 
     return base_config
 
