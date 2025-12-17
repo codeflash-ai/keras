@@ -218,15 +218,21 @@ class Operation(KerasSaveable):
             return config
 
         # In this case the subclass doesn't implement get_config():
+        # In this case the subclass doesn't implement get_config():
         # Let's see if we can autogenerate it.
         if getattr(self, "_auto_config", None) is not None:
             config.update(self._auto_config.config)
-            init_params = inspect.signature(self.__init__).parameters
-            init_has_name = "name" in init_params
-            init_has_kwargs = (
-                "kwargs" in init_params
-                and init_params["kwargs"].kind == inspect.Parameter.VAR_KEYWORD
-            )
+            # Cache expensive signature introspection at class level
+            if not hasattr(self.__class__, '_init_signature_cache'):
+                init_params = inspect.signature(self.__init__).parameters
+                init_has_name = "name" in init_params
+                init_has_kwargs = (
+                    "kwargs" in init_params
+                    and init_params["kwargs"].kind == inspect.Parameter.VAR_KEYWORD
+                )
+                self.__class__._init_signature_cache = (init_has_name, init_has_kwargs)
+            else:
+                init_has_name, init_has_kwargs = self.__class__._init_signature_cache
             if not init_has_name and not init_has_kwargs:
                 # We can't pass `name` back to `__init__`, remove it.
                 config.pop("name", None)
