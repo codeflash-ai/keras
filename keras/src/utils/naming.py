@@ -1,12 +1,13 @@
 import collections
 import re
+from functools import lru_cache
 
 from keras.src.api_export import keras_export
 from keras.src.backend.common import global_state
 
 
 def auto_name(prefix):
-    prefix = to_snake_case(prefix)
+    prefix = _to_snake_case_cached(prefix)
     return uniquify(prefix)
 
 
@@ -71,3 +72,10 @@ def get_object_name(obj):
     elif hasattr(obj, "__class__"):  # Class instance.
         return to_snake_case(obj.__class__.__name__)
     return to_snake_case(str(obj))
+
+
+@lru_cache(maxsize=32)
+def _to_snake_case_cached(name: str) -> str:
+    # Use LRU cache for to_snake_case to avoid redundant regex computation
+    # for repeated names in tight loops.
+    return to_snake_case(name)

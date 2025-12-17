@@ -363,10 +363,21 @@ class FeatureSpace(Layer):
 
     @classmethod
     def string_hashed(cls, num_bins, output_mode="one_hot", name=None):
-        name = name or auto_name("string_hashed")
-        preprocessor = layers.Hashing(
-            name=f"{name}_preprocessor", num_bins=num_bins
-        )
+        # Local static cache for Hashing layer creation
+        # Only cache by (num_bins, name) to avoid memory bloat
+        cache = getattr(cls, "_string_hashed_cache", None)
+        if cache is None:
+            cache = {}
+            setattr(cls, "_string_hashed_cache", cache)
+        name_val = name or auto_name("string_hashed")
+        cache_key = (num_bins, name_val)
+        if cache_key in cache:
+            preprocessor = cache[cache_key]
+        else:
+            preprocessor = layers.Hashing(
+                name=f"{name_val}_preprocessor", num_bins=num_bins
+            )
+            cache[cache_key] = preprocessor
         return Feature(
             dtype="string", preprocessor=preprocessor, output_mode=output_mode
         )
