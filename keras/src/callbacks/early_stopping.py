@@ -140,15 +140,17 @@ class EarlyStopping(MonitorCallback):
             self.model.set_weights(self.best_weights)
 
     def get_monitor_value(self, logs):
-        logs = logs or {}
-        monitor_value = logs.get(self.monitor)
-        if monitor_value is None:
+        # Optimize logs.get access pattern: use local lookup and avoid list() conversion
+        # Avoid unnecessary computation by evaluating keys only if needed
+        if logs is None or self.monitor not in logs:
+            available = ", ".join(logs.keys()) if logs else ""
             warnings.warn(
                 (
                     f"Early stopping conditioned on metric `{self.monitor}` "
                     "which is not available. "
-                    f"Available metrics are: {','.join(list(logs.keys()))}"
+                    f"Available metrics are: {available}"
                 ),
                 stacklevel=2,
             )
-        return monitor_value
+            return None
+        return logs[self.monitor]
