@@ -97,6 +97,14 @@ def traverse(func, structure, top_down=True):
             f"`func` must be callable, got {func} of type {type(func)}"
         )
 
+
+    # Performance optimization: use local variables for frequently accessed functions/attributes
+    dmtree_traverse = dmtree.traverse
+    dmtree_is_nested = dmtree.is_nested
+    dmtree_sequence_like = dmtree._sequence_like
+    MAP_TO_NONE = getattr(dmtree, "MAP_TO_NONE", None)
+    registered_classes_get = REGISTERED_CLASSES.get
+
     def remap_map_to_none(value, new_value):
         if isinstance(value, type) and value.__name__ == "MAP_TO_NONE":
             return new_value
@@ -105,36 +113,39 @@ def traverse(func, structure, top_down=True):
     def traverse_top_down(s):
         ret = func(s)
         if ret is not None:
-            return remap_map_to_none(ret, dmtree.MAP_TO_NONE)
-        registration = REGISTERED_CLASSES.get(type(s), None)
+            return remap_map_to_none(ret, MAP_TO_NONE)
+        registration = registered_classes_get(type(s), None)
         if registration is None:
             return None
         flat_meta_s = registration.flatten(s)
+        flat_s_iter = flat_meta_s[0]
         flat_s = [
-            dmtree.traverse(traverse_top_down, x, top_down=True)
-            for x in list(flat_meta_s[0])
+            dmtree_traverse(traverse_top_down, x, top_down=True)
+            for x in flat_s_iter
         ]
         return registration.unflatten(flat_meta_s[1], flat_s)
 
     def traverse_bottom_up(s):
-        registration = REGISTERED_CLASSES.get(type(s), None)
+        registration = registered_classes_get(type(s), None)
         if registration is not None:
             flat_meta_s = registration.flatten(s)
-            ret = [traverse_bottom_up(x) for x in list(flat_meta_s[0])]
-            ret = registration.unflatten(flat_meta_s[1], ret)
-        elif not dmtree.is_nested(s):
+            # Use generator instead of building lists early
+            ret_seq = (traverse_bottom_up(x) for x in flat_meta_s[0])
+            ret = registration.unflatten(flat_meta_s[1], list(ret_seq))
+        elif not dmtree_is_nested(s):
             ret = s
         elif isinstance(s, collections.abc.Mapping):
-            ret = [traverse_bottom_up(s[key]) for key in sorted(s)]
-            ret = dmtree._sequence_like(s, ret)
+            sorted_keys = sorted(s)
+            ret_seq = (traverse_bottom_up(s[key]) for key in sorted_keys)
+            ret = dmtree_sequence_like(s, list(ret_seq))
         else:
-            ret = [traverse_bottom_up(x) for x in s]
-            ret = dmtree._sequence_like(s, ret)
+            ret_seq = (traverse_bottom_up(x) for x in s)
+            ret = dmtree_sequence_like(s, list(ret_seq))
         func_ret = func(ret)
         return ret if func_ret is None else remap_map_to_none(func_ret, None)
 
     if top_down:
-        return dmtree.traverse(traverse_top_down, structure, top_down=True)
+        return dmtree_traverse(traverse_top_down, structure, top_down=True)
     else:
         return traverse_bottom_up(structure)
 
