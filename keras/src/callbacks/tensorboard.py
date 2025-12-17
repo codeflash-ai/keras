@@ -12,6 +12,8 @@ from keras.src.callbacks.callback import Callback
 from keras.src.layers import Embedding
 from keras.src.optimizers import Optimizer
 from keras.src.utils import file_utils
+import tensorflow.summary as _summary
+from tensorflow.compat.v1 import SummaryMetadata as _SummaryMetadata
 
 
 @keras_export("keras.callbacks.TensorBoard")
@@ -663,10 +665,9 @@ def keras_model_summary(name, data, step=None):
         ValueError: if a default writer exists, but no step was provided and
             `tf.summary.experimental.get_step()` is `None`.
     """
-    import tensorflow.summary as summary
-    from tensorflow.compat.v1 import SummaryMetadata
-
-    summary_metadata = SummaryMetadata()
+    summary_metadata = _SummaryMetadata()
+    # Hard coding a plugin name. Please refer to go/tb-plugin-name-hardcode for
+    # the rationale.
     # Hard coding a plugin name. Please refer to go/tb-plugin-name-hardcode for
     # the rationale.
     summary_metadata.plugin_data.plugin_name = "graph_keras_model"
@@ -680,9 +681,14 @@ def keras_model_summary(name, data, step=None):
         warnings.warn(f"Model failed to serialize as JSON. Ignoring... {exc}")
         return False
 
-    with summary.experimental.summary_scope(
+    # Move recurring attribute lookups out of the context manager for a minor efficiency and to minimize time in context
+    exp_summary_scope = _summary.experimental.summary_scope
+    write = _summary.write
+
+    with exp_summary_scope(
         name, "graph_keras_model", [data, step]
     ) as (tag, _):
-        return summary.write(
+        # Directly return the result of write.
+        return write(
             tag=tag, tensor=json_string, step=step, metadata=summary_metadata
         )
