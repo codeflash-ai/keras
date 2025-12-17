@@ -370,22 +370,25 @@ def compute_take_along_axis_output_shape(input_shape, indices_shape, axis):
 
 def reduce_shape(shape, axis=None, keepdims=False):
     shape = list(shape)
+    n = len(shape)
     if axis is None:
         if keepdims:
-            return tuple([1 for _ in shape])
+            return (1,) * n
         else:
-            return tuple([])
+            return ()
     elif isinstance(axis, int):
         axis = (axis,)
 
-    axis = tuple(canonicalize_axis(a, len(shape)) for a in axis)
+    axis_tuple = tuple(canonicalize_axis(a, n) for a in axis)
+
 
     if keepdims:
-        for ax in axis:
+        for ax in axis_tuple:
             shape[ax] = 1
         return tuple(shape)
     else:
-        for ax in sorted(axis, reverse=True):
+        # Pre-sort axis indices once for deletion in reverse order
+        for ax in sorted(axis_tuple, reverse=True):
             del shape[ax]
         return tuple(shape)
 

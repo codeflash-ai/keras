@@ -1,5 +1,4 @@
 import functools
-import operator
 import re
 import warnings
 
@@ -262,14 +261,18 @@ def compute_conv_transpose_output_shape(
 
 def canonicalize_axis(axis, num_dims):
     """Canonicalize an axis in [-num_dims, num_dims) to [0, num_dims)."""
-    axis = operator.index(axis)
-    if not -num_dims <= axis < num_dims:
+    # Faster than operator.index() as we avoid function call overhead
+    try:
+        axis = axis.__index__()
+    except AttributeError:
+        raise TypeError(f"axis must be an integer, got {type(axis)}")
+    if axis < -num_dims or axis >= num_dims:
         raise ValueError(
             f"axis {axis} is out of bounds for an array with dimension "
             f"{num_dims}."
         )
     if axis < 0:
-        axis = axis + num_dims
+        axis += num_dims
     return axis
 
 
