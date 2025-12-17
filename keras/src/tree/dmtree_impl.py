@@ -88,7 +88,11 @@ if backend() == "tensorflow":
 
 
 def is_nested(structure):
-    return type(structure) in REGISTERED_CLASSES or dmtree.is_nested(structure)
+    t = type(structure)
+    # Move local var and inline lookup for better branch prediction
+    if t in REGISTERED_CLASSES:
+        return True
+    return dmtree.is_nested(structure)
 
 
 def traverse(func, structure, top_down=True):
@@ -353,18 +357,24 @@ def pack_sequence_as(structure, flat_sequence):
 
     flat_sequence_it = enumerate(flat_sequence)
 
+    # Store local reference for slightly faster access in hot loop
+    get = REGISTERED_CLASSES.get
+    dmtree_is_nested = dmtree.is_nested
+    dmtree_traverse = dmtree.traverse
+    MAP_TO_NONE = dmtree.MAP_TO_NONE
+
     def unflatten_func(s):
-        registration = REGISTERED_CLASSES.get(type(s), None)
+        registration = get(type(s), None)
         if registration is not None:
             flat_meta_s = registration.flatten(s)
-            flat_s = dmtree.traverse(
+            flat_s = dmtree_traverse(
                 unflatten_func, list(flat_meta_s[0]), top_down=True
             )
             return registration.unflatten(flat_meta_s[1], flat_s)
-        elif not dmtree.is_nested(s):
+        elif not dmtree_is_nested(s):
             try:
                 _, value = next(flat_sequence_it)
-                return dmtree.MAP_TO_NONE if value is None else value
+                return MAP_TO_NONE if value is None else value
             except StopIteration:
                 raise ValueError(
                     "Too few leaves provided by `flat_sequence` for "
@@ -372,7 +382,7 @@ def pack_sequence_as(structure, flat_sequence):
                 )
         return None
 
-    ret = dmtree.traverse(unflatten_func, structure, top_down=True)
+    ret = dmtree_traverse(unflatten_func, structure, top_down=True)
     try:
         index, _ = next(flat_sequence_it)
         raise ValueError(
