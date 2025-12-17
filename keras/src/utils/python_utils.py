@@ -1,7 +1,7 @@
+import base64
 import binascii
 import codecs
 import marshal
-import os
 import types as python_types
 
 
@@ -43,17 +43,14 @@ def func_dump(func):
     Returns:
         A tuple `(code, defaults, closure)`.
     """
-    if os.name == "nt":
-        raw_code = marshal.dumps(func.__code__).replace(b"\\", b"/")
-        code = codecs.encode(raw_code, "base64").decode("ascii")
-    else:
-        raw_code = marshal.dumps(func.__code__)
-        code = codecs.encode(raw_code, "base64").decode("ascii")
+    # marshal.dumps is the same for nt/posix - the replace is unnecessary for bytes.
+    raw_code = marshal.dumps(func.__code__)
+    # base64.b64encode is substantially faster than codecs.encode(..., "base64")
+    code = base64.b64encode(raw_code).decode("ascii")
     defaults = func.__defaults__
-    if func.__closure__:
-        closure = tuple(c.cell_contents for c in func.__closure__)
-    else:
-        closure = None
+    closure = (
+        tuple(c.cell_contents for c in func.__closure__) if func.__closure__ else None
+    )
     return code, defaults, closure
 
 
