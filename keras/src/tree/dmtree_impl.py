@@ -74,7 +74,7 @@ if backend() == "tensorflow":
     )
 
     def sorted_keys_and_values(d):
-        keys = sorted(list(d.keys()))
+        keys = sorted(d)
         values = [d[k] for k in keys]
         return values, keys, keys
 
