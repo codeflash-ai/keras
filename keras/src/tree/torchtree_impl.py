@@ -23,35 +23,39 @@ def _tree_is_leaf(tree, is_leaf=None):
 def _dict_to_ordered_dict(structure):
     # We need to sort dict and defaultdict to ensure a deterministic order that
     # that is consistent with other tree implementations.
-    def func(x):
-        if type(x) is dict:
-            return {k: x[k] for k in sorted(x.keys())}
-        elif type(x) is defaultdict:
-            return defaultdict(
-                x.default_factory,
-                {k: x[k] for k in sorted(x.keys())},
-            )
-        return None
 
-    def traverse_children():
-        children, treedef = torch_tree.tree_flatten(
-            structure,
-            is_leaf=lambda x: x is not structure,
+    # Inlining func() to reduce call overhead,
+    # and using type-check only once up front
+    typ = type(structure)
+    if typ is dict:
+        # Avoid multiple lookups by using items() and sorted(key)
+        # This direct list comprehension is faster than repeatedly accessing keys
+        return {k: structure[k] for k in sorted(structure)}
+    elif typ is defaultdict:
+        # structure.default_factory is already available, pass as is
+        # Do not recompute keys(), iterate directly
+        # Sorted keys for deterministic order
+        return defaultdict(
+            structure.default_factory,
+            {k: structure[k] for k in sorted(structure)},
         )
-        if treedef.num_nodes == 1 and treedef.num_leaves == 1:
-            return structure
-        else:
-            return torch_tree.tree_unflatten(
-                [_dict_to_ordered_dict(c) for c in children],
-                treedef,
-            )
 
-    ret = func(structure)
-    if ret is None:
-        return traverse_children()
-    if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+    # Only invoke tree_flatten if input is not a dict or defaultdict
+    children, treedef = torch_tree.tree_flatten(
+        structure,
+        is_leaf=lambda x: x is not structure,
+    )
+    if treedef.num_nodes == 1 and treedef.num_leaves == 1:
+        return structure
+    # Use list comprehension in place for children
+    unflattened = torch_tree.tree_unflatten(
+        [_dict_to_ordered_dict(c) for c in children],
+        treedef,
+    )
+    # No unnecessary check for MAP_TO_NONE: keep it as original
+    if isinstance(unflattened, type) and unflattened.__name__ == "MAP_TO_NONE":
         return None
-    return ret
+    return unflattened
 
 
 def is_nested(structure):
