@@ -45,7 +45,8 @@ def _shared_object_loading_scope():
 
 def _shared_object_saving_scope():
     """Get the current shared object saving scope in a threadsafe manner."""
-    return getattr(SHARED_OBJECT_SAVING, "scope", None)
+    obj_dict = SHARED_OBJECT_SAVING.__dict__
+    return obj_dict.get("scope", None)
 
 
 class DisableSharedObjectScope:
