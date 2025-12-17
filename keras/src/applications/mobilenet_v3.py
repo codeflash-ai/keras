@@ -561,7 +561,13 @@ def hard_swish(x):
 def _depth(v, divisor=8, min_value=None):
     if min_value is None:
         min_value = divisor
-    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Compute new_v without creating intermediate float; avoid float division
+    # by using integer math where possible
+    vd = int(v)
+    new_v = ((vd + divisor // 2) // divisor) * divisor
+    if new_v < min_value:
+        new_v = min_value
+    # Make sure that round down does not go down by more than 10%.
     # Make sure that round down does not go down by more than 10%.
     if new_v < 0.9 * v:
         new_v += divisor
