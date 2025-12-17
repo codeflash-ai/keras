@@ -25,7 +25,9 @@ class OpenVINOTrainer(base_trainer.Trainer):
         self.struct_outputs = None
 
     def _unpack_singleton(self, x):
-        if isinstance(x, (list, tuple)) and len(x) == 1:
+        if type(x) is list and len(x) == 1:
+            return x[0]
+        if type(x) is tuple and len(x) == 1:
             return x[0]
         return x
 
