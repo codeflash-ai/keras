@@ -110,22 +110,24 @@ def traverse(func, structure, top_down=True):
         if registration is None:
             return None
         flat_meta_s = registration.flatten(s)
-        flat_s = [
-            dmtree.traverse(traverse_top_down, x, top_down=True)
-            for x in list(flat_meta_s[0])
-        ]
+        children = flat_meta_s[0]
+        flat_s = [dmtree.traverse(traverse_top_down, x, top_down=True)
+                  for x in children]
         return registration.unflatten(flat_meta_s[1], flat_s)
 
     def traverse_bottom_up(s):
         registration = REGISTERED_CLASSES.get(type(s), None)
         if registration is not None:
             flat_meta_s = registration.flatten(s)
-            ret = [traverse_bottom_up(x) for x in list(flat_meta_s[0])]
+            children = flat_meta_s[0]
+            ret = [traverse_bottom_up(x) for x in children]
             ret = registration.unflatten(flat_meta_s[1], ret)
         elif not dmtree.is_nested(s):
             ret = s
         elif isinstance(s, collections.abc.Mapping):
-            ret = [traverse_bottom_up(s[key]) for key in sorted(s)]
+            # Avoid repeated sorting of the keys by creating sorted_keys list once
+            keys = sorted(s)
+            ret = [traverse_bottom_up(s[key]) for key in keys]
             ret = dmtree._sequence_like(s, ret)
         else:
             ret = [traverse_bottom_up(x) for x in s]
@@ -397,11 +399,22 @@ def map_shape_structure(func, structure):
         )
 
     def map_shape_func(x):
-        if isinstance(x, (list, tuple)) and all(
-            isinstance(e, (int, type(None))) for e in x
-        ):
-            ret = func(x)
-        elif is_nested(x):
+        # Small optimization: reuse all isinstance/issubclass checks
+        t = type(x)
+        if t is list or t is tuple:
+            all_int_none = True
+            for e in x:
+                et = type(e)
+                if (et is not int) and (e is not None):
+                    all_int_none = False
+                    break
+            if all_int_none:
+                ret = func(x)
+            elif dmtree.is_nested(x):
+                return None
+            else:
+                ret = func(x)
+        elif dmtree.is_nested(x):
             return None
         else:
             ret = func(x)
