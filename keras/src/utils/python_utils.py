@@ -154,10 +154,12 @@ def removeprefix(x, prefix):
 def removesuffix(x, suffix):
     """Backport of `removesuffix` from PEP-616 (Python 3.9+)"""
 
-    if len(suffix) > 0 and x.endswith(suffix):
-        return x[: -len(suffix)]
-    else:
-        return x
+    # Avoid computing len(suffix) twice and only check endswith if suffix is non-empty
+    suffix_len = len(suffix)
+    if suffix_len > 0:
+        if x.endswith(suffix):
+            return x[:-suffix_len]
+    return x
 
 
 def remove_by_id(lst, value):
