@@ -252,6 +252,8 @@ def set_nnx_enabled(value):
     if _NNX_ENABLED:
         try:
             from flax import nnx  # noqa F401
+
+            _initialize_config()
         except ImportError:
             raise ImportError(
                 "To use NNX with the JAX backend, you must install `flax`."
@@ -359,8 +361,12 @@ if _BACKEND != "tensorflow":
         "keras.backend.backend",
     ]
 )
-def backend():
+def backend(preferred_backend="tensorflow"):
     """Publicly accessible method for determining the current backend.
+
+    Args:
+        preferred_backend: A preferred backend to return. Defaults to 'tensorflow'.
+        If the current backend is invalid or cannot be imported, this backend will be used.
 
     Returns:
         String, the name of the backend Keras is currently using. One of
@@ -372,6 +378,14 @@ def backend():
     'tensorflow'
 
     """
+    global _BACKEND
+
+    available_backends = ["tensorflow", "jax", "torch"]
+
+    if _BACKEND in available_backends:
+        return _BACKEND
+
+    _BACKEND = preferred_backend
     return _BACKEND
 
 
@@ -436,6 +450,59 @@ def max_steps_per_epoch():
             `None`, no limit is applied.
     """
     return _MAX_STEPS_PER_EPOCH
+
+
+def _initialize_config():
+    global _BACKEND, _NNX_ENABLED, _config
+
+    # Load config file, if available
+    _config_path = os.environ.get("KERAS_CONFIG_PATH", None)
+    cfg_loaded = False
+    if _config_path and os.path.exists(_config_path):
+        try:
+            with open(_config_path) as f:
+                _config = json.load(f)
+            _backend = _config.get("backend", _BACKEND)
+            _nnx_enabled_config = _config.get("nnx_enabled", _NNX_ENABLED)
+            _NNX_ENABLED = _nnx_enabled_config
+            _BACKEND = _backend
+            cfg_loaded = True
+        except ValueError:
+            _config = {}
+
+    if not cfg_loaded:
+
+        def floatx():
+            return _FLOATX
+
+        def epsilon():
+            return _EPSILON
+
+        def image_data_format():
+            return _IMAGE_DATA_FORMAT
+
+        _config = {
+            "floatx": floatx(),
+            "epsilon": epsilon(),
+            "backend": _BACKEND,
+            "image_data_format": image_data_format(),
+        }
+
+    # Set backend based on KERAS_BACKEND flag, if applicable.
+    _backend_env = os.environ.get("KERAS_BACKEND", None)
+    if _backend_env:
+        _BACKEND = _backend_env
+
+    # Stop tensorflow from using all available GPU memory if not using TF backend
+    if _BACKEND != "tensorflow":
+        os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+
+    # Set _NNX_ENABLED according to environment variable
+    env_val = os.environ.get("KERAS_NNX_ENABLED", "").lower()
+    if env_val == "true" or env_val == "1":
+        _NNX_ENABLED = True
+    elif env_val != "":
+        _NNX_ENABLED = False
 
 
 if "KERAS_NNX_ENABLED" in os.environ:
