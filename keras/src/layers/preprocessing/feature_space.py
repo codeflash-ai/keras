@@ -23,6 +23,11 @@ class Cross(KerasSaveable):
         self.feature_names = tuple(feature_names)
         self.crossing_dim = crossing_dim
         self.output_mode = output_mode
+        self._config = {
+            "feature_names": self.feature_names,
+            "crossing_dim": self.crossing_dim,
+            "output_mode": self.output_mode,
+        }
 
     def _obj_type(self):
         return "Cross"
@@ -32,11 +37,7 @@ class Cross(KerasSaveable):
         return "_X_".join(self.feature_names)
 
     def get_config(self):
-        return {
-            "feature_names": self.feature_names,
-            "crossing_dim": self.crossing_dim,
-            "output_mode": self.output_mode,
-        }
+        return self._config
 
     @classmethod
     def from_config(cls, config):
