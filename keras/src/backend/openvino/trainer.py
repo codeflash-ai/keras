@@ -49,19 +49,19 @@ class OpenVINOTrainer(base_trainer.Trainer):
         if self.test_function is not None and not force:
             return self.test_function
 
-        def one_test_step(data):
-            data = data[0]
-            return self.test_step(data)
-
-        def multi_test_steps(data):
-            for single_step_data in data:
-                logs = one_test_step([single_step_data])
-            return logs
-
         if self.steps_per_execution > 1:
-            test_step = multi_test_steps
+            # Use a generator expression for better memory performance
+            def test_step(data):
+                # Evaluate test_step for every sample (without an inner one_test_step helper)
+                last_logs = None
+                for single_step_data in data:
+                    single_data = single_step_data
+                    last_logs = self.test_step(single_data)
+                return last_logs
         else:
-            test_step = one_test_step
+            def test_step(data):
+                data = data[0]
+                return self.test_step(data)
 
         self.test_function = test_step
 
