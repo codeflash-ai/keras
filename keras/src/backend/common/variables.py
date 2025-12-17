@@ -573,15 +573,21 @@ def initialize_all_variables():
 def standardize_dtype(dtype):
     if dtype is None:
         return config.floatx()
+
+    orig_dtype = dtype
     dtype = dtypes.PYTHON_DTYPES_MAP.get(dtype, dtype)
     if hasattr(dtype, "name"):
         dtype = dtype.name
     elif hasattr(dtype, "__name__"):
         dtype = dtype.__name__
-    elif hasattr(dtype, "__str__") and (
-        "torch" in str(dtype) or "jax.numpy" in str(dtype)
-    ):
-        dtype = str(dtype).split(".")[-1]
+    else:
+        # Only call str(dtype) once if needed
+        dtype_str = None
+        if hasattr(dtype, "__str__"):
+            dtype_str = str(dtype)
+            # Only check and parse if the str contains what we expect
+            if "torch" in dtype_str or "jax.numpy" in dtype_str:
+                dtype = dtype_str.split(".")[-1]
 
     if dtype not in dtypes.ALLOWED_DTYPES:
         raise ValueError(f"Invalid dtype: {dtype}")
