@@ -1,7 +1,7 @@
 from keras.src import backend
 from keras.src.api_export import keras_export
 from keras.src.dtype_policies import dtype_policy
-from keras.src.dtype_policies.dtype_policy import QUANTIZATION_MODES
+from keras.src.dtype_policies.dtype_policy import _get_quantized_dtype_policy_by_str, QUANTIZATION_MODES
 from keras.src.dtype_policies.dtype_policy import DTypePolicy
 from keras.src.dtype_policies.dtype_policy import FloatDTypePolicy
 from keras.src.dtype_policies.dtype_policy import GPTQDTypePolicy
@@ -85,9 +85,6 @@ def get(identifier):
     Returns:
         A Keras `DTypePolicy` instance.
     """
-    from keras.src.dtype_policies.dtype_policy import (
-        _get_quantized_dtype_policy_by_str,
-    )
 
     if identifier is None:
         return dtype_policy.dtype_policy()
@@ -102,7 +99,7 @@ def get(identifier):
             return DTypePolicy(identifier)
     try:
         return DTypePolicy(backend.standardize_dtype(identifier))
-    except:
+    except Exception:
         raise ValueError(
             "Cannot interpret `dtype` argument. Expected a string "
             f"or an instance of DTypePolicy. Received: dtype={identifier}"
