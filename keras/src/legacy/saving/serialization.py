@@ -35,7 +35,7 @@ SHARED_OBJECT_SAVING = threading.local()
 # default values.
 def _shared_object_disabled():
     """Get whether shared object handling is disabled in a threadsafe manner."""
-    return getattr(SHARED_OBJECT_DISABLED, "disabled", False)
+    return SHARED_OBJECT_DISABLED.__dict__.get("disabled", False)
 
 
 def _shared_object_loading_scope():
