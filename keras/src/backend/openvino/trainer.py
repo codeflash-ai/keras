@@ -128,15 +128,13 @@ class OpenVINOTrainer(base_trainer.Trainer):
             return self.predict_step(data)
 
         def multi_predict_steps(data):
-            outputs = one_predict_step(data[:1])
+            # Pre-allocate a list to collect all outputs for each input in the batch
+            num_steps = len(data)
+            step_outputs = [one_predict_step([single_step_data]) for single_step_data in data]
 
-            for single_step_data in data[1:]:
-                step_outputs = one_predict_step([single_step_data])
-                outputs = tree.map_structure(
-                    lambda t1, t2: np.concatenate([t1, t2]),
-                    outputs,
-                    step_outputs,
-                )
+            # Stack outputs in a memory-efficient and batch-wise way
+            # tree.map_structure can be used to stack along axis 0 across all outputs
+            outputs = tree.map_structure(lambda *tensors: np.concatenate(tensors, axis=0), *step_outputs)
             return outputs
 
         if self.steps_per_execution > 1:
