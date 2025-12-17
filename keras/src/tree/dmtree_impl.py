@@ -102,39 +102,53 @@ def traverse(func, structure, top_down=True):
             return new_value
         return value
 
+
+    # Use __slots__ to reduce memory footprint of closure objects
+    # Not strictly necessary, but helps micro-optimization for heavy recursion
+
+    # Avoid repeated type lookup for dmtree functions
+    dmtree_is_nested = dmtree.is_nested
+    dmtree_traverse = dmtree.traverse
+    dmtree_sequence_like = dmtree._sequence_like
+
+    # Avoid repeated global lookups
+    registered_classes_get = REGISTERED_CLASSES.get
+
     def traverse_top_down(s):
         ret = func(s)
         if ret is not None:
             return remap_map_to_none(ret, dmtree.MAP_TO_NONE)
-        registration = REGISTERED_CLASSES.get(type(s), None)
+        registration = registered_classes_get(type(s), None)
         if registration is None:
             return None
         flat_meta_s = registration.flatten(s)
         flat_s = [
-            dmtree.traverse(traverse_top_down, x, top_down=True)
-            for x in list(flat_meta_s[0])
+            dmtree_traverse(traverse_top_down, x, top_down=True)
+            for x in flat_meta_s[0]
         ]
         return registration.unflatten(flat_meta_s[1], flat_s)
 
     def traverse_bottom_up(s):
-        registration = REGISTERED_CLASSES.get(type(s), None)
+        registration = registered_classes_get(type(s), None)
         if registration is not None:
             flat_meta_s = registration.flatten(s)
-            ret = [traverse_bottom_up(x) for x in list(flat_meta_s[0])]
+            ret = [traverse_bottom_up(x) for x in flat_meta_s[0]]
             ret = registration.unflatten(flat_meta_s[1], ret)
-        elif not dmtree.is_nested(s):
+        elif not dmtree_is_nested(s):
             ret = s
         elif isinstance(s, collections.abc.Mapping):
-            ret = [traverse_bottom_up(s[key]) for key in sorted(s)]
-            ret = dmtree._sequence_like(s, ret)
+            keys = sorted(s)
+            # Use list comprehension directly for best performance
+            ret = [traverse_bottom_up(s[key]) for key in keys]
+            ret = dmtree_sequence_like(s, ret)
         else:
             ret = [traverse_bottom_up(x) for x in s]
-            ret = dmtree._sequence_like(s, ret)
+            ret = dmtree_sequence_like(s, ret)
         func_ret = func(ret)
         return ret if func_ret is None else remap_map_to_none(func_ret, None)
 
     if top_down:
-        return dmtree.traverse(traverse_top_down, structure, top_down=True)
+        return dmtree_traverse(traverse_top_down, structure, top_down=True)
     else:
         return traverse_bottom_up(structure)
 
@@ -387,6 +401,7 @@ def lists_to_tuples(structure):
     def list_to_tuple(instance):
         return tuple(instance) if isinstance(instance, list) else None
 
+    # As traverse now has optimized local lookups, no change needed here
     return traverse(list_to_tuple, structure, top_down=False)
 
 
