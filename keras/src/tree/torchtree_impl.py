@@ -59,6 +59,17 @@ def is_nested(structure):
 
 
 def traverse(func, structure, top_down=True):
+    # Avoid unnecessary work if structure is already in a deterministic order
+    # Utilize _dict_to_ordered_dict only if it's a dict, defaultdict, or can contain them
+    # This shallow check avoids repeated recursion
+    structure_type = type(structure)
+    if structure_type is dict or structure_type.__name__ == 'defaultdict':
+        structure = _dict_to_ordered_dict(structure)
+    else:
+        # Avoid needless copy in common cases
+        # For non-dicts (tuple, list, set, primitives) it's already deterministic
+        structure = structure
+
     def traverse_children():
         children, treedef = torch_tree.tree_flatten(
             structure,
@@ -71,8 +82,6 @@ def traverse(func, structure, top_down=True):
                 [traverse(func, c, top_down=top_down) for c in children],
                 treedef,
             )
-
-    structure = _dict_to_ordered_dict(structure)
     if top_down:
         ret = func(structure)
         if ret is None:
@@ -198,7 +207,14 @@ def pack_sequence_as(structure, flat_sequence):
 
 def lists_to_tuples(structure):
     def list_to_tuple(instance):
-        return tuple(instance) if isinstance(instance, list) else None
+        if isinstance(instance, list):
+            # Slightly faster than tuple call for empty or single element lists
+            if not instance:
+                return ()
+            if len(instance) == 1:
+                return (instance[0],)
+            return tuple(instance)
+        return None
 
     return traverse(list_to_tuple, structure, top_down=False)
 
