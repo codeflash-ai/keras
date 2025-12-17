@@ -97,22 +97,21 @@ def traverse(func, structure, top_down=True):
             f"`func` must be callable, got {func} of type {type(func)}"
         )
 
-    def remap_map_to_none(value, new_value):
-        if isinstance(value, type) and value.__name__ == "MAP_TO_NONE":
-            return new_value
-        return value
-
     def traverse_top_down(s):
         ret = func(s)
         if ret is not None:
-            return remap_map_to_none(ret, dmtree.MAP_TO_NONE)
+            # Inlined remap_map_to_none
+            if isinstance(ret, type) and ret.__name__ == "MAP_TO_NONE":
+                return dmtree.MAP_TO_NONE
+            return ret
         registration = REGISTERED_CLASSES.get(type(s), None)
         if registration is None:
             return None
         flat_meta_s = registration.flatten(s)
+        to_list = list(flat_meta_s[0])  # Avoid iterator multiple traversal.
         flat_s = [
             dmtree.traverse(traverse_top_down, x, top_down=True)
-            for x in list(flat_meta_s[0])
+            for x in to_list
         ]
         return registration.unflatten(flat_meta_s[1], flat_s)
 
@@ -120,18 +119,26 @@ def traverse(func, structure, top_down=True):
         registration = REGISTERED_CLASSES.get(type(s), None)
         if registration is not None:
             flat_meta_s = registration.flatten(s)
-            ret = [traverse_bottom_up(x) for x in list(flat_meta_s[0])]
+            to_list = list(flat_meta_s[0])
+            ret = [traverse_bottom_up(x) for x in to_list]
             ret = registration.unflatten(flat_meta_s[1], ret)
         elif not dmtree.is_nested(s):
             ret = s
         elif isinstance(s, collections.abc.Mapping):
-            ret = [traverse_bottom_up(s[key]) for key in sorted(s)]
+            keys_sorted = sorted(s)
+            ret = [traverse_bottom_up(s[key]) for key in keys_sorted]
             ret = dmtree._sequence_like(s, ret)
         else:
             ret = [traverse_bottom_up(x) for x in s]
             ret = dmtree._sequence_like(s, ret)
         func_ret = func(ret)
-        return ret if func_ret is None else remap_map_to_none(func_ret, None)
+        # Inline remap_map_to_none here as well
+        if func_ret is None:
+            return ret
+        if isinstance(func_ret, type) and func_ret.__name__ == "MAP_TO_NONE":
+            return None
+        return func_ret
+
 
     if top_down:
         return dmtree.traverse(traverse_top_down, structure, top_down=True)
@@ -215,6 +222,10 @@ def map_structure(func, *structures, none_is_leaf=True):
             return func(*args)
 
         map_func = func_skipping_none
+
+
+    # hoist dmtree.is_nested to local for performance
+    is_nested = dmtree.is_nested
 
     def func_traverse_wrapper(s):
         if is_nested(s):
