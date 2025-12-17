@@ -2,6 +2,7 @@ import warnings
 
 from keras.src.api_export import keras_export
 from keras.src.backend.config import backend
+from keras.src.tree.torchtree_impl import flatten as tree_flatten
 from keras.src.utils.module_utils import dmtree
 from keras.src.utils.module_utils import optree
 
@@ -135,7 +136,7 @@ def flatten(structure):
     Returns:
         A list, the flattened version of the input `structure`.
     """
-    return tree_impl.flatten(structure)
+    return tree_flatten(structure)
 
 
 @keras_export("keras.tree.flatten_with_path")

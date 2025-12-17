@@ -142,11 +142,9 @@ class Operation(KerasSaveable):
             auto_config = False
 
         if auto_config and any(
-            [
-                param.kind == inspect.Parameter.POSITIONAL_ONLY
-                for name, param in signature.parameters.items()
-                if name != argspec.args[0]
-            ]
+            param.kind == inspect.Parameter.POSITIONAL_ONLY
+            for name, param in signature.parameters.items()
+            if name != argspec.args[0]
         ):
             # cls.__init__ takes positional only arguments, which
             # cannot be restored via cls(**config)
@@ -176,14 +174,14 @@ class Operation(KerasSaveable):
         # For safety, we only rely on auto-configs for a small set of
         # serializable types.
         supported_types = (str, int, float, bool, type(None))
-        try:
-            flat_arg_values = tree.flatten(kwargs)
-            for value in flat_arg_values:
-                if not isinstance(value, supported_types):
+        if auto_config:
+            try:
+                flat_arg_values = tree.flatten(kwargs)
+                if not all(isinstance(value, supported_types) for value in flat_arg_values):
                     auto_config = False
-                    break
-        except TypeError:
-            auto_config = False
+            except TypeError:
+                auto_config = False
+
         try:
             instance._lock = False
             if auto_config:
