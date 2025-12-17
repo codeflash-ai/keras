@@ -8,6 +8,8 @@ except ImportError:
 
 from keras.src.api_export import keras_export
 
+pass
+
 
 @keras_export("keras.utils.Config")
 class Config:
@@ -121,7 +123,10 @@ class Config:
         return self._config.items()
 
     def pop(self, *args):
-        self._raise_if_frozen()
+        if self._frozen:
+            raise ValueError(
+                "Cannot mutate attribute(s) because the config is frozen."
+            )
         return self._config.pop(*args)
 
     def update(self, *args, **kwargs):
