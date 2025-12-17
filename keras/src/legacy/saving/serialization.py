@@ -92,7 +92,8 @@ class SharedObjectLoadingScope:
     """
 
     def __enter__(self):
-        if _shared_object_disabled():
+        disabled = getattr(SHARED_OBJECT_DISABLED, "disabled", False)
+        if disabled:
             return NoopLoadingScope()
 
         global SHARED_OBJECT_LOADING
