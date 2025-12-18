@@ -359,10 +359,14 @@ def map_graph(inputs, outputs):
     # Ensure name unicity, which will be crucial for serialization
     # (since serialized nodes refer to operations by their name).
     all_names = [operation.name for operation in operations]
+    name_counts = {}
     for name in all_names:
-        if all_names.count(name) != 1:
+        name_counts[name] = name_counts.get(name, 0) + 1
+    
+    for name, count in name_counts.items():
+        if count != 1:
             raise ValueError(
-                f'The name "{name}" is used {all_names.count(name)} '
+                f'The name "{name}" is used {count} '
                 "times in the model. All operation names should be unique."
             )
     return network_nodes, nodes_by_depth, operations, operations_by_depth
